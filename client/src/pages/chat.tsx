@@ -166,7 +166,7 @@ export default function Chat() {
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-6">
         <div className="flex items-center justify-center">
-          <h1 className="text-4xl font-bold text-slate-800 tracking-tight">GOSH Mind</h1>
+          <h1 className="text-4xl font-bold text-slate-800 tracking-tight">Policy Bot</h1>
         </div>
       </header>
 
@@ -180,11 +180,11 @@ export default function Chat() {
                 <Brain className="w-8 h-8 text-white" />
               </div>
               <h2 className="text-xl font-semibold text-slate-800 mb-2">
-                Welcome to GOSH Mind
+                Welcome to Policy Bot
               </h2>
               <p className="text-slate-600 text-sm leading-relaxed">
                 Start a conversation by typing a message or using voice input. 
-                I'm here to help with any questions related to GOSH policy. This is a beta version. Please double check results against the policy referenced in the response.
+                I'm here to help with any questions related to local trust policy. This is a beta version. Please double check results against the policy referenced in the response.
               </p>
             </div>
           </div>
