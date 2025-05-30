@@ -81,13 +81,42 @@ export function useSpeech(): UseSpeechReturn {
       // --------------------
     };
 
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => { // Type added
-      console.error('Speech recognition error:', event.error);
-      setError(`Voice recognition error: ${event.error}`);
-      if (recognitionRef.current) { // Ensure stop on error
+   // Inside client/src/hooks/use-speech.ts
+// This is within your startListening function, where recognition.onerror is defined.
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      // Check for specific errors you might want to handle silently
+      // or differently from critical errors.
+
+      if (event.error === 'aborted') {
+        // This error often happens if recognition is stopped very quickly
+        // after starting, e.g., by a rapid double-click on the mic button
+        // or by your code calling .stop() programmatically right after a result.
+        // We can log it for debugging but not show it as an error to the user.
+        console.warn('[useSpeech] Speech recognition aborted (handled silently). User likely clicked stop or double-clicked.');
+        // NO CALL TO setError() HERE FOR 'aborted'
+      } else if (event.error === 'no-speech') {
+        // This happens if the user clicks the mic but says nothing.
+        console.warn('[useSpeech] No speech detected.');
+        // You can decide if you want to show an error for this or handle it silently.
+        // To show no error to the user for this case either, simply do nothing here
+        // or comment out any setError call:
+        // setError("No speech was detected. Please try again."); // Uncomment if you WANT an error for no-speech
+      } else {
+        // For all other types of errors, which might be more critical
+        // (e.g., 'network', 'audio-capture', 'not-allowed', 'service-not-allowed'),
+        // display them.
+        console.error('[useSpeech] Speech recognition error:', event.error, event.message);
+        setError(`Voice recognition error: ${event.error}`);
+      }
+
+      // Always ensure the listening state is reset and recognition is stopped (if applicable)
+      // The stop() call might be redundant if the error was 'aborted', as it's already stopping/stopped.
+      // For other errors, explicitly calling stop() is a good safeguard.
+      if (recognitionRef.current && event.error !== 'aborted') {
         recognitionRef.current.stop();
       }
-      setIsListening(false);
+      setIsListening(false); // Reset the listening state in your UI
     };
 
     recognition.onend = () => {
