@@ -271,7 +271,7 @@ export default function Chat() {
               <span>Press Enter to send</span>
             </span>
             <span className="flex items-center space-x-1">
-              <span>Click microphone to speak</span>
+              <span>Press microphone to speak</span>
             </span>
           </div>
           {inputMessage.length > 100 && (
