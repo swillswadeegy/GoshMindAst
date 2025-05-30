@@ -99,8 +99,8 @@ export function useSpeech(): UseSpeechReturn {
       synthesisRef.current.cancel();
       
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.2;
-      utterance.pitch = 2;
+      utterance.rate = 1.1;
+      utterance.pitch = 1.5;
       utterance.volume = 0.8;
       
       synthesisRef.current.speak(utterance);
