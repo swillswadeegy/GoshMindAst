@@ -89,23 +89,48 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, []);
 
+ // Inside use-speech.ts
+
+// ... (other code like initSynthesis, useState, etc. remains the same) ...
+
   const speak = useCallback((text: string) => {
     if (!synthesisRef.current) {
       synthesisRef.current = initSynthesis();
     }
 
     if (synthesisRef.current) {
-      // Cancel any ongoing speech
-      synthesisRef.current.cancel();
-      
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.1;
-      utterance.pitch = 1.5;
-      utterance.volume = 0.8;
-      
-      synthesisRef.current.speak(utterance);
+      // Get a direct reference to window.speechSynthesis for convenience
+      const synth = synthesisRef.current; 
+
+      if (synth.speaking) {
+        // If it's currently speaking, cancel the speech.
+        synth.cancel();
+        // console.log("Speech cancelled by toggle."); // For your testing
+      } else {
+        // If it's not speaking, create and speak the new utterance.
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        // --- Your Speech Settings ---
+        utterance.rate = 1.0;   // You can change this to 1.2, 1.5, etc., for faster default speed
+        utterance.pitch = 1.2;
+        utterance.volume = 0.8;
+        // You could also try setting a preferred voice here if you wanted,
+        // but as discussed, that's more complex.
+        // Example:
+        // const voices = synth.getVoices();
+        // if (voices.length > 0) {
+        //   const preferredVoice = voices.find(v => v.name === "Your Preferred Voice Name");
+        //   if (preferredVoice) utterance.voice = preferredVoice;
+        // }
+        // --- End of Settings ---
+        
+        synth.speak(utterance);
+        // console.log("Speech started for:", text); // For your testing
+      }
     }
-  }, [initSynthesis]);
+  }, [initSynthesis]); // Keep dependencies for useCallback
+
+// ... (rest of the hook, like the return statement) ...
 
   return {
     isListening,
