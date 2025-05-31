@@ -3,8 +3,8 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, Brain } from "lucide-react";
-import { ChatMessage } from "@/components/chat-message"; // Assuming this is your component for individual messages
-import { VoiceInput } from "@/components/voice-input";   // Assuming this is your voice input component
+import { ChatMessage } from "@/components/chat-message";
+import { VoiceInput } from "@/components/voice-input";
 import { useSpeech } from "@/hooks/use-speech";
 import { sendChatMessage, getConversationHistory } from "@/lib/openai-client";
 import { useToast } from "@/hooks/use-toast";
@@ -42,8 +42,7 @@ export default function Chat() {
     mutationFn: sendChatMessage,
     onSuccess: (response) => {
       const assistantMessage: Message = {
-        // Ensure your Message type has an 'id' or use a suitable key for React lists
-        id: `assistant_${Date.now()}`, // Example ID
+        id: `assistant_${Date.now()}`, 
         role: "assistant",
         content: response.response,
         timestamp: new Date().toISOString(),
@@ -51,8 +50,7 @@ export default function Chat() {
       
       setMessages(prev => [...prev, assistantMessage]);
       
-      // This is the logic you might have for auto-speaking on mobile
-      // const isMobile = /* ... your useMobile() hook result ... */ false; // Get this from your useMobile hook
+      // Your logic for auto-speaking on mobile would go here, using isMobile from useMobile hook
       // if (isMobile && assistantMessage.id !== lastSpokenAssistantMessageIdRef.current) {
       //   speak(response.response);
       //   lastSpokenAssistantMessageIdRef.current = assistantMessage.id;
@@ -76,7 +74,7 @@ export default function Chat() {
   const autoResizeTextarea = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 128) + 'px'; // max-h-32 is 128px
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 128) + 'px';
     }
   };
 
@@ -90,7 +88,7 @@ export default function Chat() {
     if (!messageContent || sendMessageMutation.isPending) return;
 
     const userMessage: Message = {
-      id: `user_${Date.now()}`, // Example ID
+      id: `user_${Date.now()}`,
       role: "user",
       content: messageContent,
       timestamp: new Date().toISOString(),
@@ -119,28 +117,25 @@ export default function Chat() {
   };
 
   const handleVoiceTranscript = (transcript: string) => {
-    // No need to setInputMessage(transcript) if it auto-sends
-    // setInputMessage(transcript); 
     setIsVoiceInput(true); 
     
-    setTimeout(() => { // setTimeout might not be necessary unless there's a reason for delay
+    setTimeout(() => {
       if (transcript.trim()) {
         const userMessage: Message = {
-          id: `user_voice_${Date.now()}`, // Example ID
+          id: `user_voice_${Date.now()}`,
           role: "user",
           content: transcript,
           timestamp: new Date().toISOString(),
         };
         
         setMessages(prev => [...prev, userMessage]);
-        // setInputMessage(""); // Not needed if inputMessage wasn't set from transcript
 
         sendMessageMutation.mutate({
           message: transcript,
           sessionId: SESSION_ID,
         });
       }
-    }, 100); // Consider if this 100ms delay is needed
+    }, 100);
   };
 
   useEffect(() => {
@@ -155,25 +150,23 @@ export default function Chat() {
     }
   }, []);
 
-  const showWelcome = messages.length === 0 && !sendMessageMutation.isPending; // Also hide welcome if initial fetch is pending
+  const showWelcome = messages.length === 0 && !sendMessageMutation.isPending;
 
   return (
-    // Outermost container: Full height, flex column, centered on wider screens
     <div className="flex flex-col min-h-screen max-w-4xl mx-auto bg-gray-50">
       {/* Header: Sticky at the top */}
-      <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 sm:py-4 sticky top-0 z-20"> {/* Adjusted padding, added z-index */}
+      <header className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 sm:py-4 sticky top-0 z-20">
         <div className="flex items-center justify-center">
-          {/* Consider making the font size responsive if needed */}
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">Policy Bot</h1>
         </div>
       </header>
 
       {/* Main Chat Area: Takes remaining space and scrolls internally */}
-      <main className="flex-1 flex flex-col overflow-hidden"> {/* Added overflow-hidden here */}
+      <main className="flex-1 flex flex-col overflow-hidden">
         {showWelcome ? (
-          // Welcome Message Container: Now also flex-1 to fill <main>, content centered within
-          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center"> {/* MODIFIED */}
-            <div className="max-w-md"> {/* Constrain width of text block */}
+          // Welcome Message Container: Fills space and centers content, with padding for header/footer
+          <div className="flex-1 flex flex-col items-center justify-center p-4 text-center pt-20 pb-24"> {/* ADDED pt-20 pb-24 */}
+            <div className="max-w-md">
               <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
                 <Brain className="w-8 h-8 text-white" />
               </div>
@@ -187,21 +180,20 @@ export default function Chat() {
             </div>
           </div>
         ) : (
-          // Chat Messages List: Grows and scrolls
+          // Chat Messages List: Grows and scrolls, with padding for header/footer
           <div 
             ref={chatContainerRef}
-            className="flex-1 px-4 py-4 space-y-4 overflow-y-auto" // This is already good
+            className="flex-1 px-4 py-4 space-y-4 overflow-y-auto pt-20 pb-24" // ADDED pt-20 pb-24
           >
-            {messages.map((message) => ( // Use message.id if available and unique
+            {messages.map((message) => (
               <ChatMessage
-                key={message.id || message.timestamp} // Prefer a stable unique ID
+                key={message.id || message.timestamp} 
                 message={message}
                 onSpeak={message.role === "assistant" ? () => speak(message.content) : undefined}
               />
             ))}
             
             {sendMessageMutation.isPending && (
-              // ... (your loading indicator - looks fine) ...
               <div className="flex justify-start">
                 <div className="flex items-start space-x-3">
                   <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
@@ -225,7 +217,7 @@ export default function Chat() {
       </main>
 
       {/* Input Area: Sticky at the bottom */}
-      <footer className="bg-white border-t border-gray-200 p-3 sm:p-4 sticky bottom-0 z-20"> {/* Adjusted padding, added z-index */}
+      <footer className="bg-white border-t border-gray-200 p-3 sm:p-4 sticky bottom-0 z-20">
         <div className="flex items-end space-x-2 sm:space-x-3">
           <div className="relative flex-shrink-0">
             <VoiceInput 
@@ -239,23 +231,38 @@ export default function Chat() {
               value={inputMessage}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Type your message..." // Shortened placeholder
-              className="resize-none rounded-2xl border-gray-300 px-4 py-3 pr-12 focus:border-primary focus:ring-primary/50 text-sm max-h-32 min-h-[48px] w-full" // Ensure w-full
+              placeholder="Type your message..."
+              className="resize-none rounded-2xl border-gray-300 px-4 py-3 pr-12 focus:border-primary focus:ring-primary/50 text-sm max-h-32 min-h-[48px] w-full"
               rows={1}
               disabled={sendMessageMutation.isPending}
             />
             <Button
               onClick={handleSendMessage}
               disabled={!inputMessage.trim() || sendMessageMutation.isPending}
-              className="absolute right-2 bottom-2 w-8 h-8 p-0 rounded-full" // Adjusted positioning slightly if needed
+              className="absolute right-2 bottom-2 w-8 h-8 p-0 rounded-full"
               size="sm"
-              aria-label="Send message" // Added aria-label for accessibility
+              aria-label="Send message"
             >
               <Send className="w-4 h-4" />
             </Button>
           </div>
         </div>
-        {/* Removed input helpers for brevity in this example, you can keep them */}
+        {/* Your input helpers can remain here */}
+        <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+          <div className="flex items-center space-x-4">
+            <span className="flex items-center space-x-1">
+              <span>Press Enter to send</span>
+            </span>
+            <span className="flex items-center space-x-1">
+              <span>Press microphone to speak</span>
+            </span>
+          </div>
+          {inputMessage.length > 100 && ( // Example, adjust as needed
+            <div>
+              <span>{inputMessage.length}</span>/2000
+            </div>
+          )}
+        </div>
       </footer>
     </div>
   );
