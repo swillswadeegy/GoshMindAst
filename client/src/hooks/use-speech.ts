@@ -1,183 +1,169 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react"; // Added useEffect
 
+// (Keep your UseSpeechReturn interface as is, or ensure it matches the return object)
 export interface UseSpeechReturn {
-  isListening: boolean;
-  isSupported: boolean;
-  startListening: () => void;
-  stopListening: () => void;
-  speak: (text: string) => void;
-  error: string | null;
+  isListening: boolean;
+  isSupported: boolean;
+  startListening: (onResult: (transcript: string) => void) => void;
+  stopListening: () => void;
+  speak: (text: string, rate?: number) => void; // Assuming you have rate from TTS fix
+  error: string | null; // For recognition errors
+  // Add other properties like isSpeaking, synthesisError, cancelSpeak if you use them
 }
 
+
 export function useSpeech(): UseSpeechReturn {
-  const [isListening, setIsListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const synthesisRef = useRef<SpeechSynthesis | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null); // For TTS
 
-  // Check if speech recognition is supported
-  const isSupported = typeof window !== "undefined" && 
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+  const isSupported =
+    typeof window !== "undefined" &&
+    ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
 
-  // Initialize speech recognition
-  const initRecognition = useCallback(() => {
-    if (!isSupported) return null;
+  const initRecognition = useCallback(() => {
+    if (!isSupported || typeof window === "undefined") return null;
+    const SpeechRecognitionImpl =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognitionImpl();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    return recognition;
+  }, [isSupported]);
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    return recognition;
-  }, [isSupported]);
-
-  // Initialize speech synthesis
-  const initSynthesis = useCallback(() => {
-    if (typeof window !== "undefined" && 'speechSynthesis' in window) {
-      return window.speechSynthesis;
-    }
-    return null;
-  }, []);
-
-
-  const startListening = useCallback((onResult: (transcript: string) => void) => {
-    if (!isSupported) {
-      setError("Speech recognition is not supported in your browser");
-      return;
+  // Function to fully stop and clean up recognition
+  const fullyStopRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      // console.log("[useSpeech] Fully stopping recognition and cleaning up listeners."); // For debugging
+      recognitionRef.current.onstart = null;
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.onerror = null;
+      recognitionRef.current.onend = null; // Detach onend itself before calling stop/abort
+      recognitionRef.current.abort(); // Use abort for a more immediate stop
+      recognitionRef.current = null; // Release the object
     }
+    setIsListening(false); // Ensure state is updated
+  }, []); // No dependencies, it operates on the ref
 
-    // Optional: If one is already active from a previous erroneous state, try to stop it.
-    // if (recognitionRef.current && isListening) { // isListening might not be needed here if onstart sets it
-    //   recognitionRef.current.stop();
-    // }
-
-    const recognition = initRecognition();
-    if (!recognition) return;
-
-    recognitionRef.current = recognition;
-    setError(null);
-    // setIsListening(true); // onstart is a better place for this
-
-// Inside client/src/hooks/use-speech.ts
-// Within the startListening function:
-
-    recognition.onstart = () => {
-      setIsListening(true);
-      // console.log("[useSpeech] Speech recognition started."); // For debugging
-    };
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      onResult(transcript);
-      // --- REMOVE OR COMMENT OUT THE EXPLICIT STOP ---
-      // if (recognitionRef.current) {
-      //   recognitionRef.current.stop(); // THIS LINE IS THE SUSPECT
-      // }
-      // ---------------------------------------------
-      // console.log("[useSpeech] Result received:", transcript); // For debugging
-    };
-
-    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error === 'aborted') {
-        console.warn('[useSpeech] Speech recognition aborted (handled silently).');
-      } else if (event.error === 'no-speech') {
-        console.warn('[useSpeech] No speech detected.');
-        // setError("No speech was detected. Please try again."); // Only set error if you want to display it
-      } else {
-        console.error('[useSpeech] Speech recognition error:', event.error, event.message);
-        setError(`Voice recognition error: ${event.error}`);
+  const startListening = useCallback(
+    (onResult: (transcript: string) => void) => {
+      if (!isSupported) {
+        setError("Speech recognition is not supported in your browser");
+        return;
       }
 
-      if (recognitionRef.current && event.error !== 'aborted') {
-        recognitionRef.current.stop();
+      // If a recognition is somehow active, try to clean it up first.
+      if (recognitionRef.current) {
+        // console.log("[useSpeech] startListening called while a recognitionRef exists, attempting cleanup."); // For debugging
+        fullyStopRecognition();
       }
-      setIsListening(false);
-    };
+
+      const recognition = initRecognition();
+      if (!recognition) {
+        setError("Could not initialize speech recognition instance.");
+        return;
+      }
+
+      recognitionRef.current = recognition;
+      setError(null);
+
+      recognition.onstart = () => {
+        // console.log("[useSpeech] Speech recognition started."); // For debugging
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        const transcript = event.results[0][0].transcript;
+        onResult(transcript);
+        // No explicit stop here; rely on continuous=false and onend for natural completion.
+        // console.log("[useSpeech] Result received:", transcript); // For debugging
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (event.error === 'aborted') {
+          console.warn('[useSpeech] Speech recognition aborted (handled silently).');
+        } else if (event.error === 'no-speech') {
+          console.warn('[useSpeech] No speech detected.');
+          // setError("No speech was detected. Please try again.");
+        } else {
+          console.error('[useSpeech] Speech recognition error:', event.error, event.message);
+          setError(`Voice recognition error: ${event.error}`);
+        }
+        fullyStopRecognition(); // Use full cleanup on error
+      };
 
       recognition.onend = () => {
-      // --- ADD THIS LINE AT THE BEGINNING ---
-      if (recognitionRef.current) {
-        recognitionRef.current.stop(); // Explicitly ensure stop is called when 'end' event fires
-      }
-      // ------------------------------------
-      
-      setIsListening(false);
-      console.log("[useSpeech] Speech recognition actually ended (onend event fired).");
-    };
+        console.log("[useSpeech] Speech recognition actually ended (onend event fired).");
+        fullyStopRecognition(); // Use full cleanup when recognition naturally ends
+      };
 
-    // ... rest of startListening (try/catch for recognition.start())
-
-    try {
-      recognition.start();
-    } catch (err) {
-      console.error('Failed to start recognition:', err);
-      setError("Failed to start voice recognition");
-      if (recognitionRef.current) {
-        recognitionRef.current.abort(); // abort if .start() itself fails
+      try {
+        recognition.start();
+      } catch (err: any) {
+        console.error('[useSpeech] Failed to start recognition (exception):', err);
+        setError(`Failed to start voice recognition: ${err.message}`);
+        fullyStopRecognition(); // Use full cleanup if .start() throws
       }
-      setIsListening(false);
-    }
-  }, [isSupported, initRecognition]); // Removed isListening from here if not used for the initial stop check
+    },
+    [isSupported, initRecognition, fullyStopRecognition] // Added fullyStopRecognition
+  );
 
   const stopListening = useCallback(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop(); // This should trigger onend
+    // console.log("[useSpeech] stopListening called manually."); // For debugging
+    fullyStopRecognition();
+  }, [fullyStopRecognition]);
+
+
+  // Your speak function for TTS (Text-to-Speech)
+  const initSynthesis = useCallback(() => {
+    if (typeof window !== "undefined" && 'speechSynthesis' in window) {
+      return window.speechSynthesis;
     }
+    return null;
   }, []);
 
-  // ... (your speak function and the rest of the hook) ...
-
-  // Inside use-speech.ts
-
-// ... (other code like initSynthesis, useState, etc. remains the same) ...
-
-  const speak = useCallback((text: string) => {
+  const speak = useCallback((text: string, rate: number = 1.05) => { // Adjusted default rate as per your last version
     if (!synthesisRef.current) {
       synthesisRef.current = initSynthesis();
     }
-
     if (synthesisRef.current) {
-      // Get a direct reference to window.speechSynthesis for convenience
-      const synth = synthesisRef.current; 
-
+      const synth = synthesisRef.current;
       if (synth.speaking) {
-        // If it's currently speaking, cancel the speech.
         synth.cancel();
-        // console.log("Speech cancelled by toggle."); // For your testing
       } else {
-        // If it's not speaking, create and speak the new utterance.
         const utterance = new SpeechSynthesisUtterance(text);
-        
-        // --- Your Speech Settings ---
-        utterance.rate = 1.05;   // You can change this to 1.2, 1.5, etc., for faster default speed
-        utterance.pitch = 1.1;
-        utterance.volume = 0.8;
-        // You could also try setting a preferred voice here if you wanted,
-        // but as discussed, that's more complex.
-        // Example:
-        // const voices = synth.getVoices();
-        // if (voices.length > 0) {
-        //   const preferredVoice = voices.find(v => v.name === "Your Preferred Voice Name");
-        //   if (preferredVoice) utterance.voice = preferredVoice;
-        // }
-        // --- End of Settings ---
-        
+        utterance.rate = rate;
+        utterance.pitch = 1.1; // From your last version
+        utterance.volume = 0.8; // From your last version
+        // Add voice selection logic here if you have it
         synth.speak(utterance);
-        // console.log("Speech started for:", text); // For your testing
       }
     }
-  }, [initSynthesis]); // Keep dependencies for useCallback
+  }, [initSynthesis]);
 
-// ... (rest of the hook, like the return statement) ...
 
-  return {
-    isListening,
-    isSupported,
-    startListening: (onResult: (transcript: string) => void) => startListening(onResult),
-    stopListening,
-    speak,
-    error,
-  };
+  // Cleanup effect for when the component using this hook unmounts
+  useEffect(() => {
+    return () => {
+      // console.log("[useSpeech] Hook unmounting, ensuring recognition is stopped."); // For debugging
+      fullyStopRecognition();
+      if (synthesisRef.current) {
+        synthesisRef.current.cancel(); // Also cancel any speech
+      }
+    };
+  }, [fullyStopRecognition]); // Added fullyStopRecognition
+
+
+  return {
+    isListening,
+    isSupported,
+    startListening,
+    stopListening,
+    speak,
+    error,
+    // Remember to add any other states/functions your app expects from this hook
+    // e.g., isSpeaking, synthesisError, cancelSpeak from my more comprehensive TTS example
+  };
 }
