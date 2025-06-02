@@ -45,7 +45,7 @@ export function useSpeech(): UseSpeechReturn {
 onend = () => {
 alert("onend fired!"); // This will pop up an alert box
 setIsListening(false);
-// };
+};
 // ... (useState, useRef, useCallback, isSupported, initRecognition, initSynthesis, etc. ... )
 
   const startListening = useCallback((onResult: (transcript: string) => void) => {
