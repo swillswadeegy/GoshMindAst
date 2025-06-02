@@ -5,8 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Send, Brain } from "lucide-react";
 import { ChatMessage } from "@/components/chat-message";
 import { VoiceInput } from "@/components/voice-input";
-import { useSpeech } from "@/hooks/use-speech"; // Assuming this is correctly set up
-import { useMobile } from "@/hooks/use-mobile"; // Assuming you have this for mobile-specific logic
+import { useSpeech } from "@/hooks/use-speech";
 import { sendChatMessage, getConversationHistory } from "@/lib/openai-client";
 import { useToast } from "@/hooks/use-toast";
 import type { Message } from "@shared/schema";
@@ -18,23 +17,20 @@ const SESSION_ID = `session_${Date.now()}_${Math.random().toString(36).substr(2,
 export default function Chat() {
   const [inputMessage, setInputMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isVoiceInput, setIsVoiceInput] = useState(false);
+  const [isVoiceInput, setIsVoiceInput] = useState(false); // Kept from your original
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const footerRef = useRef<HTMLElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null); // Ref for auto-scrolling
+  const headerRef = useRef<HTMLElement>(null); // For dynamic padding
+  const footerRef = useRef<HTMLElement>(null); // For dynamic padding
+  const messagesEndRef = useRef<HTMLDivElement>(null); // For auto-scrolling
 
   const [contentPaddingTop, setContentPaddingTop] = useState(0);
   const [contentPaddingBottom, setContentPaddingBottom] = useState(0);
 
-  const { speak, isSpeaking, cancelSpeak } = useSpeech(); // Assuming these are from your useSpeech hook
-  const isMobile = useMobile(); // Assuming this hook returns a boolean
-  const lastSpokenAssistantMessageIdRef = useRef<string | null>(null);
-
+  const { speak } = useSpeech(); // You had this, so keeping it
   const { toast } = useToast();
 
-  // Calculate and set padding based on header/footer height
+  // Effect for calculating dynamic padding based on header/footer height
   useEffect(() => {
     const calculatePaddings = () => {
       if (headerRef.current) {
@@ -46,21 +42,22 @@ export default function Chat() {
     };
 
     calculatePaddings(); // Initial calculation
-    window.addEventListener('resize', calculatePaddings);
+    window.addEventListener('resize', calculatePaddings); // Recalculate on window resize
 
+    // Observe footer for height changes (e.g., textarea resize)
     let footerResizeObserver: ResizeObserver | undefined;
     if (footerRef.current) {
       footerResizeObserver = new ResizeObserver(calculatePaddings);
       footerResizeObserver.observe(footerRef.current);
     }
 
-    return () => {
+    return () => { // Cleanup function
       window.removeEventListener('resize', calculatePaddings);
       if (footerResizeObserver && footerRef.current) {
         footerResizeObserver.unobserve(footerRef.current);
       }
     };
-  }, []); // Empty dependency array, runs once on mount and cleans up
+  }, []); // Empty dependency array: runs once on mount, cleans up on unmount
 
   // Load conversation history
   const { data: conversationData } = useQuery({
@@ -87,19 +84,8 @@ export default function Chat() {
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, assistantMessage]);
-
-      // Auto-speak on mobile for new assistant messages
-      if (
-        isMobile &&
-        assistantMessage.content &&
-        assistantMessage.id !== lastSpokenAssistantMessageIdRef.current
-      ) {
-        if (isSpeaking) {
-          cancelSpeak(); 
-        }
-        speak(assistantMessage.content); // Add desired rate if your speak function takes it
-        lastSpokenAssistantMessageIdRef.current = assistantMessage.id;
-      }
+      
+      // Auto-speak logic was removed as useMobile was not in your original import list for this file
       
       queryClient.invalidateQueries({ 
         queryKey: ['/api/conversation', SESSION_ID] 
@@ -120,17 +106,18 @@ export default function Chat() {
     if (textareaRef.current) {
       const el = textareaRef.current;
       el.style.height = 'auto';
-      const maxHeight = 128; // Corresponds to max-h-32
+      const maxHeight = 128; // From max-h-32 Tailwind class (8rem * 16px/rem)
       el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
     }
   };
 
-  useEffect(() => { // Call autoResizeTextarea when inputMessage changes for typing
+  useEffect(() => {
     autoResizeTextarea();
-  }, [inputMessage]);
+  }, [inputMessage]); // Auto-resize when inputMessage changes (as user types)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputMessage(e.target.value);
+    // autoResizeTextarea() will be called by the useEffect above
   };
 
   const handleSendMessage = () => {
@@ -143,10 +130,12 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage(""); // Clear input after preparing to send
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'; // Reset height
+    setInputMessage("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'; // Reset textarea height after send
+    }
     sendMessageMutation.mutate({ message: messageContent, sessionId: SESSION_ID });
-    setIsVoiceInput(false);
+    setIsVoiceInput(false); // Reset voice input flag
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -158,17 +147,19 @@ export default function Chat() {
 
   const handleVoiceTranscript = (transcript: string) => {
     setIsVoiceInput(true);
-    if (transcript.trim()) {
-      const userMessage: Message = {
-        id: `user_voice_${Date.now()}`,
-        role: "user",
-        content: transcript,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages(prev => [...prev, userMessage]);
-      // Directly send, no need to setInputMessage for voice if it's auto-sent
-      sendMessageMutation.mutate({ message: transcript, sessionId: SESSION_ID });
-    }
+    // No need to setInputMessage(transcript) if it auto-sends
+    setTimeout(() => { // setTimeout might not be necessary
+      if (transcript.trim()) {
+        const userMessage: Message = {
+          id: `user_voice_${Date.now()}`,
+          role: "user",
+          content: transcript,
+          timestamp: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, userMessage]);
+        sendMessageMutation.mutate({ message: transcript, sessionId: SESSION_ID });
+      }
+    }, 100); // Consider if delay is needed
   };
 
   // Auto-scroll to bottom when new messages arrive
@@ -192,9 +183,10 @@ export default function Chat() {
     if (textareaRef.current && !isVoiceInput) { 
       textareaRef.current.focus();
     }
-  }, [messages, isVoiceInput]); // Refocus after messages update, but not if voice input just occurred
+  }, [messages, isVoiceInput]); // Refocus after new message, unless it was voice recently
 
   const showWelcome = messages.length === 0 && !sendMessageMutation.isPending && !conversationData;
+
 
   return (
     <div className="flex flex-col min-h-screen max-w-4xl mx-auto bg-gray-50">
@@ -225,8 +217,8 @@ export default function Chat() {
         ) : (
           <div 
             ref={chatContainerRef}
-            className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto" // Existing px-4 and pb-4 provide base internal padding
-            style={{ paddingBottom: `${Math.max(16, contentPaddingBottom)}px` }} // Ensure minimum 1rem (pb-4) even if footer is tiny or not measured yet
+            className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto" 
+            style={{ paddingBottom: `${Math.max(16, contentPaddingBottom)}px` }} // Ensure min 1rem padding (16px)
           >
             {messages.map((message) => (
               <ChatMessage
@@ -236,8 +228,7 @@ export default function Chat() {
               />
             ))}
             
-            {/* Dummy element for auto-scrolling to the end */}
-            <div ref={messagesEndRef} />
+            <div ref={messagesEndRef} /> {/* Dummy element for auto-scrolling */}
 
             {sendMessageMutation.isPending && (
               <div className="flex justify-start">
@@ -301,7 +292,7 @@ export default function Chat() {
               <span>Press microphone to speak</span>
             </span>
           </div>
-          {inputMessage.length > 100 && (
+          {inputMessage.length > 100 && ( 
             <div>
               <span>{inputMessage.length}</span>/2000
             </div>
