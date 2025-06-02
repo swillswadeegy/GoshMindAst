@@ -94,10 +94,15 @@ export function useSpeech(): UseSpeechReturn {
         fullyStopRecognition(); // Use full cleanup on error
       };
 
-      recognition.onend = () => {
-        console.log("[useSpeech] Speech recognition actually ended (onend event fired).");
-        fullyStopRecognition(); // Use full cleanup when recognition naturally ends
-      };
+         recognition.onend = () => {
+      // This is where we want to put the alert
+      if (recognitionRef.current) {
+        recognitionRef.current.stop(); // Keep this explicit stop
+      }
+      setIsListening(false);
+      console.log("[useSpeech] Speech recognition actually ended (onend event fired)."); // We'll replace this
+    };
+
 
       try {
         recognition.start();
