@@ -5,7 +5,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Send, Brain } from "lucide-react";
 import { ChatMessage } from "@/components/chat-message";
 import { VoiceInput } from "@/components/voice-input";
-import { useSpeech } from "@/hooks/use-speech";
+import { useSpeech } from "@/hooks/use-speech"; // Assuming this is correctly set up
+import { useMobile } from "@/hooks/use-mobile"; // Assuming you have this for mobile-specific logic
 import { sendChatMessage, getConversationHistory } from "@/lib/openai-client";
 import { useToast } from "@/hooks/use-toast";
 import type { Message } from "@shared/schema";
@@ -22,12 +23,18 @@ export default function Chat() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const footerRef = useRef<HTMLElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null); // Ref for auto-scrolling
+
   const [contentPaddingTop, setContentPaddingTop] = useState(0);
   const [contentPaddingBottom, setContentPaddingBottom] = useState(0);
 
-  const { speak } = useSpeech();
+  const { speak, isSpeaking, cancelSpeak } = useSpeech(); // Assuming these are from your useSpeech hook
+  const isMobile = useMobile(); // Assuming this hook returns a boolean
+  const lastSpokenAssistantMessageIdRef = useRef<string | null>(null);
+
   const { toast } = useToast();
 
+  // Calculate and set padding based on header/footer height
   useEffect(() => {
     const calculatePaddings = () => {
       if (headerRef.current) {
@@ -38,7 +45,7 @@ export default function Chat() {
       }
     };
 
-    calculatePaddings();
+    calculatePaddings(); // Initial calculation
     window.addEventListener('resize', calculatePaddings);
 
     let footerResizeObserver: ResizeObserver | undefined;
@@ -53,20 +60,23 @@ export default function Chat() {
         footerResizeObserver.unobserve(footerRef.current);
       }
     };
-  }, []);
+  }, []); // Empty dependency array, runs once on mount and cleans up
 
+  // Load conversation history
   const { data: conversationData } = useQuery({
     queryKey: ['/api/conversation', SESSION_ID],
     queryFn: () => getConversationHistory(SESSION_ID),
     refetchOnMount: true,
   });
 
+  // Update messages when conversation data loads
   useEffect(() => {
     if (conversationData?.messages) {
       setMessages(conversationData.messages);
     }
   }, [conversationData]);
 
+  // Send message mutation
   const sendMessageMutation = useMutation({
     mutationFn: sendChatMessage,
     onSuccess: (response) => {
@@ -77,9 +87,20 @@ export default function Chat() {
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, assistantMessage]);
-      // Add your auto-speak logic for mobile here if you have useMobile hook
-      // const isMobile = useMobile(); // Example
-      // if (isMobile) { speak(response.response); }
+
+      // Auto-speak on mobile for new assistant messages
+      if (
+        isMobile &&
+        assistantMessage.content &&
+        assistantMessage.id !== lastSpokenAssistantMessageIdRef.current
+      ) {
+        if (isSpeaking) {
+          cancelSpeak(); 
+        }
+        speak(assistantMessage.content); // Add desired rate if your speak function takes it
+        lastSpokenAssistantMessageIdRef.current = assistantMessage.id;
+      }
+      
       queryClient.invalidateQueries({ 
         queryKey: ['/api/conversation', SESSION_ID] 
       });
@@ -94,17 +115,17 @@ export default function Chat() {
     },
   });
 
+  // Auto-resize textarea
   const autoResizeTextarea = () => {
     if (textareaRef.current) {
       const el = textareaRef.current;
       el.style.height = 'auto';
-      const maxHeight = 128; // From max-h-32
+      const maxHeight = 128; // Corresponds to max-h-32
       el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-      // No need to call setContentPaddingBottom here directly if ResizeObserver on footer is active
     }
   };
 
-  useEffect(() => {
+  useEffect(() => { // Call autoResizeTextarea when inputMessage changes for typing
     autoResizeTextarea();
   }, [inputMessage]);
 
@@ -122,8 +143,8 @@ export default function Chat() {
       timestamp: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage("");
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    setInputMessage(""); // Clear input after preparing to send
+    if (textareaRef.current) textareaRef.current.style.height = 'auto'; // Reset height
     sendMessageMutation.mutate({ message: messageContent, sessionId: SESSION_ID });
     setIsVoiceInput(false);
   };
@@ -145,31 +166,35 @@ export default function Chat() {
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => [...prev, userMessage]);
+      // Directly send, no need to setInputMessage for voice if it's auto-sent
       sendMessageMutation.mutate({ message: transcript, sessionId: SESSION_ID });
     }
   };
 
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (chatContainerRef.current) {
+    const scrollToBottom = () => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    if (chatContainerRef.current && messagesEndRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
-      const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 100;
-      if (messages.length <= 2 || isScrolledToBottom) {
-        setTimeout(() => {
-          if (chatContainerRef.current) {
-            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-          }
-        }, 0);
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+      if (messages.length <= 2 || distanceFromBottom < 150) { 
+        setTimeout(scrollToBottom, 0); 
       }
     }
   }, [messages]);
 
+  // Initial focus on textarea
   useEffect(() => {
-    if (textareaRef.current && !isVoiceInput) {
+    if (textareaRef.current && !isVoiceInput) { 
       textareaRef.current.focus();
     }
-  }, [messages, isVoiceInput]);
+  }, [messages, isVoiceInput]); // Refocus after messages update, but not if voice input just occurred
 
-  const showWelcome = messages.length === 0 && !sendMessageMutation.isPending;
+  const showWelcome = messages.length === 0 && !sendMessageMutation.isPending && !conversationData;
 
   return (
     <div className="flex flex-col min-h-screen max-w-4xl mx-auto bg-gray-50">
@@ -200,8 +225,8 @@ export default function Chat() {
         ) : (
           <div 
             ref={chatContainerRef}
-            className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto" // Keep existing px-4 and pb-4 for base padding within scroll area
-            style={{ paddingBottom: `${contentPaddingBottom}px` }} 
+            className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto" // Existing px-4 and pb-4 provide base internal padding
+            style={{ paddingBottom: `${Math.max(16, contentPaddingBottom)}px` }} // Ensure minimum 1rem (pb-4) even if footer is tiny or not measured yet
           >
             {messages.map((message) => (
               <ChatMessage
@@ -211,7 +236,9 @@ export default function Chat() {
               />
             ))}
             
-            {/* --- CORRECTED LOADING INDICATOR PLACEMENT --- */}
+            {/* Dummy element for auto-scrolling to the end */}
+            <div ref={messagesEndRef} />
+
             {sendMessageMutation.isPending && (
               <div className="flex justify-start">
                 <div className="flex items-start space-x-3">
@@ -231,7 +258,6 @@ export default function Chat() {
                 </div>
               </div>
             )}
-            {/* --- END OF CORRECTION --- */}
           </div>
         )}
       </main>
