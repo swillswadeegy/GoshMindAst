@@ -63,67 +63,52 @@ export function useSpeech(): UseSpeechReturn {
     setError(null);
     // setIsListening(true); // onstart is a better place for this
 
+// Inside client/src/hooks/use-speech.ts
+// Within the startListening function:
+
     recognition.onstart = () => {
       setIsListening(true);
-      // console.log("Speech recognition started."); // For debugging
+      // console.log("[useSpeech] Speech recognition started."); // For debugging
     };
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => { // Type added for clarity
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       const transcript = event.results[0][0].transcript;
-      onResult(transcript); // Send the result to your component
-
-      // --- ADD THIS LINE ---
-      // Explicitly stop recognition after a result is processed.
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        // console.log("Explicitly stopped recognition in onresult."); // For debugging
-      }
-      // --------------------
+      onResult(transcript);
+      // --- REMOVE OR COMMENT OUT THE EXPLICIT STOP ---
+      // if (recognitionRef.current) {
+      //   recognitionRef.current.stop(); // THIS LINE IS THE SUSPECT
+      // }
+      // ---------------------------------------------
+      // console.log("[useSpeech] Result received:", transcript); // For debugging
     };
-
-   // Inside client/src/hooks/use-speech.ts
-// This is within your startListening function, where recognition.onerror is defined.
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      // Check for specific errors you might want to handle silently
-      // or differently from critical errors.
-
       if (event.error === 'aborted') {
-        // This error often happens if recognition is stopped very quickly
-        // after starting, e.g., by a rapid double-click on the mic button
-        // or by your code calling .stop() programmatically right after a result.
-        // We can log it for debugging but not show it as an error to the user.
-        console.warn('[useSpeech] Speech recognition aborted (handled silently). User likely clicked stop or double-clicked.');
-        // NO CALL TO setError() HERE FOR 'aborted'
+        console.warn('[useSpeech] Speech recognition aborted (handled silently).');
       } else if (event.error === 'no-speech') {
-        // This happens if the user clicks the mic but says nothing.
         console.warn('[useSpeech] No speech detected.');
-        // You can decide if you want to show an error for this or handle it silently.
-        // To show no error to the user for this case either, simply do nothing here
-        // or comment out any setError call:
-        // setError("No speech was detected. Please try again."); // Uncomment if you WANT an error for no-speech
+        // setError("No speech was detected. Please try again."); // Only set error if you want to display it
       } else {
-        // For all other types of errors, which might be more critical
-        // (e.g., 'network', 'audio-capture', 'not-allowed', 'service-not-allowed'),
-        // display them.
         console.error('[useSpeech] Speech recognition error:', event.error, event.message);
         setError(`Voice recognition error: ${event.error}`);
       }
 
-      // Always ensure the listening state is reset and recognition is stopped (if applicable)
-      // The stop() call might be redundant if the error was 'aborted', as it's already stopping/stopped.
-      // For other errors, explicitly calling stop() is a good safeguard.
       if (recognitionRef.current && event.error !== 'aborted') {
         recognitionRef.current.stop();
       }
-      setIsListening(false); // Reset the listening state in your UI
+      setIsListening(false);
     };
 
     recognition.onend = () => {
       setIsListening(false);
-      console.log("Speech recognition actually ended (onend event fired)."); // For debugging
-      // recognitionRef.current = null; // Optional: nullify ref if you want to be very clean
+      console.log("[useSpeech] Speech recognition actually ended (onend event fired)."); // Keep this log for testing
+      // If the mic indicator issue returns with the above change, one *could* try an explicit stop here:
+      // if (recognitionRef.current) {
+      //   recognitionRef.current.stop();
+      // }
     };
+
+    // ... rest of startListening (try/catch for recognition.start())
 
     try {
       recognition.start();
