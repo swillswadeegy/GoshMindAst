@@ -99,13 +99,15 @@ export function useSpeech(): UseSpeechReturn {
       setIsListening(false);
     };
 
-    recognition.onend = () => {
+      recognition.onend = () => {
+      // --- ADD THIS LINE AT THE BEGINNING ---
+      if (recognitionRef.current) {
+        recognitionRef.current.stop(); // Explicitly ensure stop is called when 'end' event fires
+      }
+      // ------------------------------------
+      
       setIsListening(false);
-      console.log("[useSpeech] Speech recognition actually ended (onend event fired)."); // Keep this log for testing
-      // If the mic indicator issue returns with the above change, one *could* try an explicit stop here:
-      // if (recognitionRef.current) {
-      //   recognitionRef.current.stop();
-      // }
+      console.log("[useSpeech] Speech recognition actually ended (onend event fired).");
     };
 
     // ... rest of startListening (try/catch for recognition.start())
