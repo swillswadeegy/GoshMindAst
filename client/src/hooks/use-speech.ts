@@ -43,7 +43,7 @@ export function useSpeech(): UseSpeechReturn {
 
   const fullyStopRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      alert("DEBUG: fullyStopRecognition() called."); // Alert here
+      // console.log("[useSpeech] fullyStopRecognition called.");
       recognitionRef.current.onstart = null;
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
@@ -56,12 +56,10 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, [isListening]);
 
-  // Helper function to contain the actual recognition setup and start
   const initiateNewRecognition = useCallback((onResult: (transcript: string) => void) => {
-    alert("DEBUG: initiateNewRecognition() called.");
+    // console.log("[useSpeech] initiateNewRecognition called.");
     const recognition = initRecognition();
     if (!recognition) {
-      alert("DEBUG: initiateNewRecognition - Failed to init recognition object.");
       setRecognitionError("Could not initialize speech recognition instance.");
       return;
     }
@@ -71,86 +69,93 @@ export function useSpeech(): UseSpeechReturn {
 
     recognition.onstart = () => {
       setIsListening(true);
-      alert("DEBUG: Event: onstart - Mic should be active.");
+      console.log("[useSpeech] Event: onstart - Mic should be active.");
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const speechResult = event.results[event.results.length - 1];
       const transcript = speechResult[0].transcript;
-      alert(`DEBUG: Event: onresult - Transcript chunk: "${transcript.substring(0,20)}..."`);
+      console.log(`[useSpeech] Event: onresult - Transcript: "${transcript}"`);
       
       if (transcript.trim()) {
         onResult(transcript);
       }
 
       if (recognitionRef.current) {
-        alert("DEBUG: Event: onresult - Calling .abort()");
-        recognitionRef.current.abort(); 
+        // console.log("[useSpeech] Event: onresult - Calling .stop() after processing result.");
+        recognitionRef.current.stop(); // This should trigger onend
       }
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      alert(`DEBUG: Event: onerror - Error: ${event.error}`);
+      console.warn(`[useSpeech] Event: onerror - Error: ${event.error}, Message: ${event.message}`);
+      
+      // --- MODIFIED HANDLING FOR 'aborted' ---
       if (event.error === 'aborted') {
-        // console.warn still useful if you can ever see console
-        console.warn('[useSpeech] Event: onerror - Recognition aborted (handled silently).');
+        // Log it, but DO NOT call fullyStopRecognition or setError immediately.
+        // Let's see if the session can recover or if another event (like onend) will fire.
+        // We still need to ensure isListening is reset if it truly ends.
+        // This might be handled by onend if abort eventually triggers it.
+        // For now, we just prevent an immediate shutdown from this specific error.
+        // If it doesn't recover, onend might not fire, and stopListening might be needed.
+        // We might still need to setIsListening(false) here if 'aborted' means it's truly over.
+        // Let's try setting isListening false but not full stop.
+        if(isListening) setIsListening(false);
+
       } else if (event.error === 'no-speech') {
         console.warn('[useSpeech] Event: onerror - No speech detected.');
+        // setRecognitionError("No speech was detected. Please try again.");
+        fullyStopRecognition(); // For no-speech, we should stop.
       } else {
-        console.error('[useSpeech] Event: onerror - Error details:', event.error, event.message);
+        // For other actual errors, set the error and stop.
         setRecognitionError(`Voice recognition error: ${event.error}`);
+        fullyStopRecognition();
       }
-      fullyStopRecognition(); 
+      // --- END OF MODIFIED HANDLING ---
     };
 
     recognition.onend = () => {
-      alert("DEBUG: Event: onend - Recognition session formally ended.");
+      console.log("[useSpeech] Event: onend - Recognition session formally ended.");
       fullyStopRecognition(); 
     };
 
     try {
-      alert("DEBUG: initiateNewRecognition - Attempting recognition.start()");
+      console.log("[useSpeech] initiateNewRecognition - Attempting recognition.start()");
       recognition.start();
     } catch (err: any) {
-      alert(`DEBUG: initiateNewRecognition - EXCEPTION during recognition.start(): ${err.message}`);
+      console.error('[useSpeech] Exception during recognition.start():', err);
       setRecognitionError(`Failed to start voice recognition: ${err.message}`);
       fullyStopRecognition();
     }
-  }, [initRecognition, fullyStopRecognition]); // Dependencies for initiateNewRecognition
+  }, [initRecognition, fullyStopRecognition, isListening]); // isListening added as dependency for the modified onerror
 
 
   const startListening = useCallback(
     (onResult: (transcript: string) => void) => {
-      alert("DEBUG: startListening() called.");
+      // console.log("[useSpeech] startListening() called.");
       if (!isRecognitionSupported) {
-        alert("DEBUG: startListening - Speech recognition not supported.");
         setRecognitionError("Speech recognition is not supported.");
         return;
       }
-      // Check if isListening is true from the PREVIOUS state.
-      // If so, stop it, wait a bit, then start new.
-      if (isListening) { // Using isListening directly from state
-        alert("DEBUG: startListening - isListening was true. Stopping previous session.");
+      if (isListening && recognitionRef.current) {
+        // console.log("[useSpeech] startListening: Previous session was listening, stopping it now.");
         fullyStopRecognition(); 
         setTimeout(() => {
-            alert("DEBUG: startListening - After timeout (due to previous session being active), calling initiateNewRecognition.");
+            // console.log("[useSpeech] startListening: After timeout, calling initiateNewRecognition.");
             initiateNewRecognition(onResult);
-        }, 150); // Slightly longer timeout for debugging
+        }, 50); 
         return; 
       }
-      // If not currently listening, proceed to initiate directly.
       initiateNewRecognition(onResult);
     },
-    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening] // isListening is important here
+    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening]
   );
 
   const stopListening = useCallback(() => {
-    alert("DEBUG: stopListening() (manual call) triggered.");
+    // console.log("[useSpeech] Manual stopListening called.");
     fullyStopRecognition();
   }, [fullyStopRecognition]);
 
-  // --- Speech Synthesis (Output) Logic ---
-  // (Keeping TTS logic brief as it's not the focus of this specific bug)
   const initSynthesis = useCallback(() => {
     if (!isSynthesisSupported || typeof window === "undefined") return null;
     return window.speechSynthesis;
@@ -187,6 +192,7 @@ export function useSpeech(): UseSpeechReturn {
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => { setIsSpeaking(false); currentUtteranceRef.current = null; };
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+        console.error("[useSpeech] Speech synthesis error:", event.error);
         setSynthesisError(`Speech synthesis error: ${event.error}`);
         setIsSpeaking(false); currentUtteranceRef.current = null;
       };
@@ -204,7 +210,7 @@ export function useSpeech(): UseSpeechReturn {
 
   useEffect(() => {
     return () => {
-      alert("DEBUG: useSpeech Hook Unmounting - cleaning up recognition.");
+      // console.log("[useSpeech] Hook Unmounting - cleaning up recognition.");
       fullyStopRecognition();
       if (synthesisRef.current) {
         synthesisRef.current.cancel();
@@ -221,4 +227,4 @@ export function useSpeech(): UseSpeechReturn {
   };
 }
 
-// --- END OF use-speech.ts FILE --- Verify this comment is the last line you copy ---
+// --- END OF use-speech.ts FILE ---
