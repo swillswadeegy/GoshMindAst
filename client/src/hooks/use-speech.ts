@@ -43,7 +43,7 @@ export function useSpeech(): UseSpeechReturn {
 
   const fullyStopRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      alert("DEBUG: fullyStopRecognition() called."); // Alert for this important function
+      alert("DEBUG: fullyStopRecognition() called.");
       recognitionRef.current.onstart = null;
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
@@ -82,22 +82,21 @@ export function useSpeech(): UseSpeechReturn {
         onResult(transcript);
       }
       // NO EXPLICIT STOP OR ABORT HERE - let continuous=false handle ending
+      // This was changed in the version that produced the alerts. The problem is an early 'aborted' error.
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       alert(`DEBUG: Event: onerror - Error: ${event.error}`);
       if (event.error === 'aborted') {
-        // This might be less common if we don't call stop/abort in onresult
-        console.warn('[useSpeech] Event: onerror - Recognition aborted.');
-         if(isListening) setIsListening(false); // Still reset state
+        console.warn('[useSpeech] Event: onerror - Recognition aborted (now only setting isListening to false).');
+         if(isListening) setIsListening(false); // Reset state but DON'T call fullyStopRecognition here
       } else if (event.error === 'no-speech') {
         console.warn('[useSpeech] Event: onerror - No speech detected.');
-        // setRecognitionError("No speech was detected. Please try again.");
-        fullyStopRecognition(); // If no speech, session should end.
+        fullyStopRecognition(); 
       } else {
         console.error('[useSpeech] Event: onerror - Error details:', event.error, event.message);
         setRecognitionError(`Voice recognition error: ${event.error}`);
-        fullyStopRecognition(); // Stop on other errors
+        fullyStopRecognition(); 
       }
     };
 
@@ -107,14 +106,23 @@ export function useSpeech(): UseSpeechReturn {
     };
 
     try {
-      alert("DEBUG: initiateNewRecognition - Attempting recognition.start()");
-      recognition.start();
+      alert("DEBUG: initiateNewRecognition - Attempting recognition.start() with a slight delay.");
+      // --- ADDED DELAY BEFORE START ---
+      setTimeout(() => {
+        if (recognitionRef.current) { // Check if ref is still valid (not cleaned up by a rapid event)
+            alert("DEBUG: initiateNewRecognition - Calling recognition.start() (after delay)");
+            recognitionRef.current.start();
+        } else {
+            alert("DEBUG: initiateNewRecognition - recognitionRef became null before delayed start.");
+        }
+      }, 100); // 100ms delay, can be adjusted
+      // --- END OF ADDED DELAY ---
     } catch (err: any) {
-      alert(`DEBUG: initiateNewRecognition - EXCEPTION during recognition.start(): ${err.message}`);
+      alert(`DEBUG: initiateNewRecognition - EXCEPTION during recognition.start() setup: ${err.message}`);
       setRecognitionError(`Failed to start voice recognition: ${err.message}`);
       fullyStopRecognition();
     }
-  }, [initRecognition, fullyStopRecognition, isListening]); // isListening added as onerror uses it
+  }, [initRecognition, fullyStopRecognition, isListening]);
 
 
   const startListening = useCallback(
@@ -125,7 +133,7 @@ export function useSpeech(): UseSpeechReturn {
         setRecognitionError("Speech recognition is not supported.");
         return;
       }
-      if (isListening && recognitionRef.current) {
+      if (isListening && recognitionRef.current) { // Check if already listening
         alert("DEBUG: startListening - Previous session detected as 'isListening', calling fullyStopRecognition.");
         fullyStopRecognition(); 
         setTimeout(() => {
@@ -144,18 +152,19 @@ export function useSpeech(): UseSpeechReturn {
     fullyStopRecognition();
   }, [fullyStopRecognition]);
 
-  const initSynthesis = useCallback(() => {
+  // --- Speech Synthesis (Output) Logic ---
+  const initSynthesis = useCallback(() => { /* ... as before ... */
     if (!isSynthesisSupported || typeof window === "undefined") return null;
     return window.speechSynthesis;
   }, [isSynthesisSupported]);
 
-  useEffect(() => {
+  useEffect(() => { /* ... as before ... */
     if (!synthesisRef.current && isSynthesisSupported) {
       synthesisRef.current = initSynthesis();
     }
   }, [initSynthesis, isSynthesisSupported]);
 
-  const speak = useCallback(
+  const speak = useCallback( /* ... as before ... */
     (text: string, rate: number = 1.05) => {
       if (!synthesisRef.current) {
         if (isSynthesisSupported) {
@@ -178,7 +187,6 @@ export function useSpeech(): UseSpeechReturn {
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => { setIsSpeaking(false); currentUtteranceRef.current = null; };
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-        console.error("[useSpeech] Speech synthesis error:", event.error);
         setSynthesisError(`Speech synthesis error: ${event.error}`);
         setIsSpeaking(false); currentUtteranceRef.current = null;
       };
@@ -186,7 +194,7 @@ export function useSpeech(): UseSpeechReturn {
     }, [initSynthesis, isSynthesisSupported]
   );
 
-  const cancelSpeak = useCallback(() => {
+  const cancelSpeak = useCallback(() => { /* ... as before ... */
     if (synthesisRef.current && synthesisRef.current.speaking) {
       synthesisRef.current.cancel();
       setIsSpeaking(false);
@@ -194,9 +202,8 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, []);
 
-  useEffect(() => {
+  useEffect(() => { /* ... as before ... */
     return () => {
-      // alert("DEBUG: useSpeech Hook Unmounting - cleaning up recognition."); // Can be noisy
       fullyStopRecognition();
       if (synthesisRef.current) {
         synthesisRef.current.cancel();
@@ -204,7 +211,7 @@ export function useSpeech(): UseSpeechReturn {
     };
   }, [fullyStopRecognition]);
 
-  return {
+  return { /* ... as before ... */
     isListening, isSpeaking,
     isSupported: isRecognitionSupported, isSynthesisSupported,
     startListening, stopListening,
