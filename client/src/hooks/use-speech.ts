@@ -43,7 +43,7 @@ export function useSpeech(): UseSpeechReturn {
 
   const fullyStopRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      // console.log("[useSpeech] fullyStopRecognition called.");
+      alert("DEBUG: fullyStopRecognition() called."); // Alert here
       recognitionRef.current.onstart = null;
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
@@ -56,9 +56,12 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, [isListening]);
 
+  // Helper function to contain the actual recognition setup and start
   const initiateNewRecognition = useCallback((onResult: (transcript: string) => void) => {
+    alert("DEBUG: initiateNewRecognition() called.");
     const recognition = initRecognition();
     if (!recognition) {
+      alert("DEBUG: initiateNewRecognition - Failed to init recognition object.");
       setRecognitionError("Could not initialize speech recognition instance.");
       return;
     }
@@ -68,76 +71,86 @@ export function useSpeech(): UseSpeechReturn {
 
     recognition.onstart = () => {
       setIsListening(true);
-      // console.log("[useSpeech] Event: onstart - Mic should be active.");
+      alert("DEBUG: Event: onstart - Mic should be active.");
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const speechResult = event.results[event.results.length - 1];
       const transcript = speechResult[0].transcript;
+      alert(`DEBUG: Event: onresult - Transcript chunk: "${transcript.substring(0,20)}..."`);
       
       if (transcript.trim()) {
         onResult(transcript);
       }
 
-      // --- MODIFIED LINE: Using abort() instead of stop() ---
       if (recognitionRef.current) {
-        // console.log("[useSpeech] Event: onresult - Calling .abort() after processing result.");
-        recognitionRef.current.abort(); // This should also trigger onend
+        alert("DEBUG: Event: onresult - Calling .abort()");
+        recognitionRef.current.abort(); 
       }
-      // --- END OF MODIFICATION ---
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      alert(`DEBUG: Event: onerror - Error: ${event.error}`);
       if (event.error === 'aborted') {
+        // console.warn still useful if you can ever see console
         console.warn('[useSpeech] Event: onerror - Recognition aborted (handled silently).');
       } else if (event.error === 'no-speech') {
         console.warn('[useSpeech] Event: onerror - No speech detected.');
       } else {
-        console.error('[useSpeech] Event: onerror - Error:', event.error, event.message);
+        console.error('[useSpeech] Event: onerror - Error details:', event.error, event.message);
         setRecognitionError(`Voice recognition error: ${event.error}`);
       }
       fullyStopRecognition(); 
     };
 
     recognition.onend = () => {
-      // Keep this alert for testing if onend is reached
-      alert("DEBUG: Speech recognition 'onend' event fired!"); 
-      // console.log("[useSpeech] Event: onend - Recognition session formally ended.");
+      alert("DEBUG: Event: onend - Recognition session formally ended.");
       fullyStopRecognition(); 
     };
 
     try {
+      alert("DEBUG: initiateNewRecognition - Attempting recognition.start()");
       recognition.start();
     } catch (err: any) {
-      console.error('[useSpeech] Exception during recognition.start():', err);
+      alert(`DEBUG: initiateNewRecognition - EXCEPTION during recognition.start(): ${err.message}`);
       setRecognitionError(`Failed to start voice recognition: ${err.message}`);
       fullyStopRecognition();
     }
-  }, [initRecognition, fullyStopRecognition]);
+  }, [initRecognition, fullyStopRecognition]); // Dependencies for initiateNewRecognition
 
 
   const startListening = useCallback(
     (onResult: (transcript: string) => void) => {
+      alert("DEBUG: startListening() called.");
       if (!isRecognitionSupported) {
+        alert("DEBUG: startListening - Speech recognition not supported.");
         setRecognitionError("Speech recognition is not supported.");
         return;
       }
-      if (isListening && recognitionRef.current) {
+      // Check if isListening is true from the PREVIOUS state.
+      // If so, stop it, wait a bit, then start new.
+      if (isListening) { // Using isListening directly from state
+        alert("DEBUG: startListening - isListening was true. Stopping previous session.");
         fullyStopRecognition(); 
         setTimeout(() => {
+            alert("DEBUG: startListening - After timeout (due to previous session being active), calling initiateNewRecognition.");
             initiateNewRecognition(onResult);
-        }, 50); 
+        }, 150); // Slightly longer timeout for debugging
         return; 
       }
+      // If not currently listening, proceed to initiate directly.
       initiateNewRecognition(onResult);
     },
-    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening]
+    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening] // isListening is important here
   );
 
   const stopListening = useCallback(() => {
+    alert("DEBUG: stopListening() (manual call) triggered.");
     fullyStopRecognition();
   }, [fullyStopRecognition]);
 
+  // --- Speech Synthesis (Output) Logic ---
+  // (Keeping TTS logic brief as it's not the focus of this specific bug)
   const initSynthesis = useCallback(() => {
     if (!isSynthesisSupported || typeof window === "undefined") return null;
     return window.speechSynthesis;
@@ -165,29 +178,17 @@ export function useSpeech(): UseSpeechReturn {
       }
       const synth = synthesisRef.current;
       if (synth.speaking && currentUtteranceRef.current?.text === text) {
-        synth.cancel();
-        setIsSpeaking(false); 
-        currentUtteranceRef.current = null;
-        return;
+        synth.cancel(); setIsSpeaking(false); currentUtteranceRef.current = null; return;
       }
-      if (synth.speaking) {
-          synth.cancel();
-      }
+      if (synth.speaking) { synth.cancel(); }
       const utterance = new SpeechSynthesisUtterance(text);
       currentUtteranceRef.current = utterance;
-      utterance.rate = rate;
-      utterance.pitch = 1.1;
-      utterance.volume = 0.8;
+      utterance.rate = rate; utterance.pitch = 1.1; utterance.volume = 0.8;
       utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        currentUtteranceRef.current = null;
-      };
+      utterance.onend = () => { setIsSpeaking(false); currentUtteranceRef.current = null; };
       utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-        console.error("[useSpeech] Speech synthesis error:", event.error);
         setSynthesisError(`Speech synthesis error: ${event.error}`);
-        setIsSpeaking(false);
-        currentUtteranceRef.current = null;
+        setIsSpeaking(false); currentUtteranceRef.current = null;
       };
       synth.speak(utterance);
     }, [initSynthesis, isSynthesisSupported]
@@ -197,12 +198,13 @@ export function useSpeech(): UseSpeechReturn {
     if (synthesisRef.current && synthesisRef.current.speaking) {
       synthesisRef.current.cancel();
       setIsSpeaking(false);
-      currentUtterance_ref.current = null; // Corrected to currentUtteranceRef
+      currentUtteranceRef.current = null;
     }
   }, []);
 
   useEffect(() => {
     return () => {
+      alert("DEBUG: useSpeech Hook Unmounting - cleaning up recognition.");
       fullyStopRecognition();
       if (synthesisRef.current) {
         synthesisRef.current.cancel();
@@ -211,16 +213,11 @@ export function useSpeech(): UseSpeechReturn {
   }, [fullyStopRecognition]);
 
   return {
-    isListening,
-    isSpeaking,
-    isSupported: isRecognitionSupported,
-    isSynthesisSupported,
-    startListening,
-    stopListening,
-    speak,
-    cancelSpeak,
-    recognitionError,
-    synthesisError,
+    isListening, isSpeaking,
+    isSupported: isRecognitionSupported, isSynthesisSupported,
+    startListening, stopListening,
+    speak, cancelSpeak,
+    recognitionError, synthesisError,
   };
 }
 
