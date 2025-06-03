@@ -48,7 +48,7 @@ export function useSpeech(): UseSpeechReturn {
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
       recognitionRef.current.onend = null;
-      recognitionRef.current.abort();
+      recognitionRef.current.abort(); 
       recognitionRef.current = null;
     }
     if (isListening) {
@@ -56,9 +56,7 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, [isListening]);
 
-  // Helper function to contain the actual recognition setup and start
   const initiateNewRecognition = useCallback((onResult: (transcript: string) => void) => {
-    // console.log("[useSpeech] initiateNewRecognition called.");
     const recognition = initRecognition();
     if (!recognition) {
       setRecognitionError("Could not initialize speech recognition instance.");
@@ -76,14 +74,17 @@ export function useSpeech(): UseSpeechReturn {
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const speechResult = event.results[event.results.length - 1];
       const transcript = speechResult[0].transcript;
-      // console.log(`[useSpeech] Event: onresult - Transcript: "${transcript}"`);
+      
       if (transcript.trim()) {
         onResult(transcript);
       }
+
+      // --- MODIFIED LINE: Using abort() instead of stop() ---
       if (recognitionRef.current) {
-        // console.log("[useSpeech] Event: onresult - Calling .stop() after processing result.");
-        recognitionRef.current.stop();
+        // console.log("[useSpeech] Event: onresult - Calling .abort() after processing result.");
+        recognitionRef.current.abort(); // This should also trigger onend
       }
+      // --- END OF MODIFICATION ---
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -91,26 +92,26 @@ export function useSpeech(): UseSpeechReturn {
         console.warn('[useSpeech] Event: onerror - Recognition aborted (handled silently).');
       } else if (event.error === 'no-speech') {
         console.warn('[useSpeech] Event: onerror - No speech detected.');
-        // setRecognitionError("No speech was detected. Please try again.");
       } else {
         console.error('[useSpeech] Event: onerror - Error:', event.error, event.message);
         setRecognitionError(`Voice recognition error: ${event.error}`);
       }
-      fullyStopRecognition(); // Full cleanup
-    }; // Make sure this curly brace and semicolon are here
+      fullyStopRecognition(); 
+    };
 
     recognition.onend = () => {
-      console.log("[useSpeech] Event: onend - Recognition session formally ended.");
-      fullyStopRecognition(); // Full cleanup
-    }; // Make sure this curly brace and semicolon are here
+      // Keep this alert for testing if onend is reached
+      alert("DEBUG: Speech recognition 'onend' event fired!"); 
+      // console.log("[useSpeech] Event: onend - Recognition session formally ended.");
+      fullyStopRecognition(); 
+    };
 
     try {
-      // console.log("[useSpeech] Calling recognition.start()");
       recognition.start();
     } catch (err: any) {
       console.error('[useSpeech] Exception during recognition.start():', err);
       setRecognitionError(`Failed to start voice recognition: ${err.message}`);
-      fullyStopRecognition(); // Full cleanup
+      fullyStopRecognition();
     }
   }, [initRecognition, fullyStopRecognition]);
 
@@ -122,10 +123,8 @@ export function useSpeech(): UseSpeechReturn {
         return;
       }
       if (isListening && recognitionRef.current) {
-        // console.log("[useSpeech] startListening: Previous session was listening, stopping it now.");
         fullyStopRecognition(); 
         setTimeout(() => {
-            // console.log("[useSpeech] startListening: Proceeding to start new recognition after delay.");
             initiateNewRecognition(onResult);
         }, 50); 
         return; 
@@ -136,7 +135,6 @@ export function useSpeech(): UseSpeechReturn {
   );
 
   const stopListening = useCallback(() => {
-    // console.log("[useSpeech] Manual stopListening called.");
     fullyStopRecognition();
   }, [fullyStopRecognition]);
 
@@ -199,7 +197,7 @@ export function useSpeech(): UseSpeechReturn {
     if (synthesisRef.current && synthesisRef.current.speaking) {
       synthesisRef.current.cancel();
       setIsSpeaking(false);
-      currentUtteranceRef.current = null;
+      currentUtterance_ref.current = null; // Corrected to currentUtteranceRef
     }
   }, []);
 
