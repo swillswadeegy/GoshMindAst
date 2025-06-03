@@ -43,7 +43,7 @@ export function useSpeech(): UseSpeechReturn {
 
   const fullyStopRecognition = useCallback(() => {
     if (recognitionRef.current) {
-      // console.log("[useSpeech] fullyStopRecognition called.");
+      console.log("[useSpeech] fullyStopRecognition called.");
       recognitionRef.current.onstart = null;
       recognitionRef.current.onresult = null;
       recognitionRef.current.onerror = null;
@@ -57,92 +57,84 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, [isListening]);
 
+  const initiateNewRecognition = useCallback((onResultCallback: (transcript: string) => void) => {
+    console.log("[useSpeech] initiateNewRecognition called.");
+    const recognition = initRecognition();
+    if (!recognition) {
+      setRecognitionError("Could not initialize speech recognition instance.");
+      return;
+    }
+
+    recognitionRef.current = recognition;
+    setRecognitionError(null);
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      console.log("[useSpeech] Event: onstart - Mic active.");
+    };
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const speechResult = event.results[event.results.length - 1];
+      const transcript = speechResult[0].transcript;
+      console.log(`[useSpeech] Event: onresult - Transcript: "${transcript}"`);
+      
+      if (transcript.trim()) {
+        onResultCallback(transcript);
+      }
+      // NO EXPLICIT STOP/ABORT HERE.
+    };
+
+    recognition.onspeechend = () => {
+      console.log("[useSpeech] Event: onspeechend - User likely finished speaking.");
+      // We are now relying on the browser to naturally proceed to onend after this
+      // when continuous = false.
+    };
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.warn(`[useSpeech] Event: onerror - Error: ${event.error}, Message: ${event.message}`);
+      // Don't show UI error for 'aborted' or 'no-speech' as they are common/handled.
+      if (event.error !== 'aborted' && event.error !== 'no-speech') {
+        setRecognitionError(`Voice recognition error: ${event.error}`);
+      }
+      fullyStopRecognition(); // Always cleanup on error
+    };
+
+    recognition.onend = () => {
+      console.log("[useSpeech] Event: onend - Recognition session formally ended.");
+      fullyStopRecognition(); 
+    };
+
+    try {
+      console.log("[useSpeech] Attempting recognition.start()");
+      recognition.start();
+    } catch (err: any) {
+      console.error('[useSpeech] Exception during recognition.start():', err);
+      setRecognitionError(`Failed to start voice recognition: ${err.message}`);
+      fullyStopRecognition();
+    }
+  }, [initRecognition, fullyStopRecognition]); // Removed isListening from here, startListening handles it
+
+
   const startListening = useCallback(
     (onResult: (transcript: string) => void) => {
-      console.log("[useSpeech] startListening called.");
+      console.log("[useSpeech] startListening() called.");
       if (!isRecognitionSupported) {
         setRecognitionError("Speech recognition is not supported.");
         return;
       }
 
-      // If a recognition is already genuinely in a listening state, stop it.
-      // This is primarily for user-initiated double clicks.
-      if (isListening && recognitionRef.current) {
-        console.log("[useSpeech] startListening: was already listening, stopping previous.");
-        fullyStopRecognition();
-        // Do not immediately restart; let the user click again if they meant to restart.
-        // This avoids potential loops if state updates are tricky.
-        return; 
-      }
-      
-      // If not listening, or if ref was cleaned up, proceed.
-      // Ensure any old ref is definitely cleared if isListening was somehow false but ref existed.
-      if (recognitionRef.current) {
-        console.log("[useSpeech] startListening: Found existing recognitionRef but wasn't 'isListening'. Cleaning up before new session.");
-        fullyStopRecognition(); // Clean up just in case
-      }
-
-      const recognition = initRecognition();
-      if (!recognition) {
-        setRecognitionError("Could not initialize speech recognition instance.");
+      if (isListening) { // Check current state from the hook
+        console.log("[useSpeech] startListening: Already listening, stopping previous session first.");
+        fullyStopRecognition(); // This will set isListening to false
+        // We will let the user click again to start a new session.
+        // This prevents complex setTimeout logic and potential race conditions if clicks are very fast.
         return;
       }
-
-      recognitionRef.current = recognition;
-      setRecognitionError(null);
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        console.log("[useSpeech] Event: onstart - Mic active.");
-      };
-
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const speechResult = event.results[event.results.length - 1];
-        const transcript = speechResult[0].transcript;
-        console.log(`[useSpeech] Event: onresult - Transcript: "${transcript}"`);
-        if (transcript.trim()) {
-          onResult(transcript);
-        }
-        // NO EXPLICIT STOP/ABORT HERE.
-        // Rely on continuous=false for the browser to end speech and fire onspeechend/onend.
-      };
-
-      recognition.onspeechend = () => {
-        // This event indicates the user has stopped speaking.
-        console.log("[useSpeech] Event: onspeechend - User stopped speaking.");
-        // We don't call stop() here anymore either. We wait for onend.
-        // If onend doesn't fire after this, that's the core issue for mic indicator.
-      };
-
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.warn(`[useSpeech] Event: onerror - Error: ${event.error}, Message: ${event.message}`);
-        if (event.error === 'aborted') {
-          // This can happen if fullyStopRecognition is called (e.g. by stopListening, or unmount)
-          // while recognition was starting or active.
-          // We already call fullyStopRecognition below, so just log.
-        } else if (event.error === 'no-speech') {
-          // No error message to UI for this, but still stop.
-        } else {
-          setRecognitionError(`Voice recognition error: ${event.error}`);
-        }
-        fullyStopRecognition();
-      };
-
-      recognition.onend = () => {
-        console.log("[useSpeech] Event: onend - Recognition session formally ended.");
-        fullyStopRecognition(); 
-      };
-
-      try {
-        console.log("[useSpeech] Attempting recognition.start()");
-        recognition.start();
-      } catch (err: any) {
-        console.error('[useSpeech] Exception during recognition.start():', err);
-        setRecognitionError(`Failed to start voice recognition: ${err.message}`);
-        fullyStopRecognition();
-      }
+      
+      // If not currently listening, proceed to initiate.
+      initiateNewRecognition(onResult);
     },
-    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening]
+    [isRecognitionSupported, initRecognition, fullyStopRecognition, isListening] 
   );
 
   const stopListening = useCallback(() => {
@@ -151,18 +143,18 @@ export function useSpeech(): UseSpeechReturn {
   }, [fullyStopRecognition]);
 
   // --- Speech Synthesis (Output) Logic --- (Kept as is from your last working version)
-  const initSynthesis = useCallback(() => {
+  const initSynthesis = useCallback(() => { /* ... */
     if (!isSynthesisSupported || typeof window === "undefined") return null;
     return window.speechSynthesis;
   }, [isSynthesisSupported]);
 
-  useEffect(() => {
+  useEffect(() => { /* ... */
     if (!synthesisRef.current && isSynthesisSupported) {
       synthesisRef.current = initSynthesis();
     }
   }, [initSynthesis, isSynthesisSupported]);
 
-  const speak = useCallback(
+  const speak = useCallback( /* ... */
     (text: string, rate: number = 1.05) => {
       if (!synthesisRef.current) {
         if (isSynthesisSupported) {
@@ -193,7 +185,7 @@ export function useSpeech(): UseSpeechReturn {
     }, [initSynthesis, isSynthesisSupported]
   );
 
-  const cancelSpeak = useCallback(() => {
+  const cancelSpeak = useCallback(() => { /* ... */
     if (synthesisRef.current && synthesisRef.current.speaking) {
       synthesisRef.current.cancel();
       setIsSpeaking(false);
@@ -201,7 +193,7 @@ export function useSpeech(): UseSpeechReturn {
     }
   }, []);
 
-  useEffect(() => {
+  useEffect(() => { /* ... */
     return () => {
       fullyStopRecognition();
       if (synthesisRef.current) {
@@ -210,7 +202,7 @@ export function useSpeech(): UseSpeechReturn {
     };
   }, [fullyStopRecognition]);
 
-  return {
+  return { /* ... */
     isListening, isSpeaking,
     isSupported: isRecognitionSupported, isSynthesisSupported,
     startListening, stopListening,
