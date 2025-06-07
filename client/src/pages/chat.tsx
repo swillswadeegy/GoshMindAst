@@ -284,7 +284,7 @@ export default function Chat() {
         </div>
 
         <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
-          <span>Press Enter to send • Press microphone to speak</span>
+          <span>Press Enter to send • Press microphone to begin a conversation. Press microphone again to stop listening</span>
           {inputMessage.length > 100 && (
             <span>
               {inputMessage.length}
