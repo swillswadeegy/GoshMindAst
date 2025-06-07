@@ -5,6 +5,8 @@ export interface UseSpeechReturn {
   isListening: boolean;
   isSpeaking: boolean;
   isRecognitionSupported: boolean;
+  /** LEGACY alias so existing components keep working */
+  isSupported?: boolean;
   isSynthesisSupported: boolean;
   startListening: (onResult: (transcript: string) => void) => void;
   stopListening: () => void;
@@ -16,7 +18,7 @@ export interface UseSpeechReturn {
 
 export function useSpeech(): UseSpeechReturn {
   /* --------------------------------------------------------------------
-   * ────────────────────────── 1.  STATE  ──────────────────────────────
+   * 1. STATE
    * ------------------------------------------------------------------ */
   const [isListening, setIsListening] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
@@ -25,14 +27,14 @@ export function useSpeech(): UseSpeechReturn {
   const [synthesisError, setSynthesisError] = useState<string | null>(null);
 
   /* --------------------------------------------------------------------
-   * ──────────────────────── 2.  REFS (mutable)  ───────────────────────
+   * 2. REFS
    * ------------------------------------------------------------------ */
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthesisRef   = useRef<SpeechSynthesis | null>(null);
   const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   /* --------------------------------------------------------------------
-   * ─────────────── 3.  FEATURE-DETECTION / “CAN I USE?”  ──────────────
+   * 3. FEATURE DETECTION
    * ------------------------------------------------------------------ */
   const isRecognitionSupported =
     typeof window !== "undefined" &&
@@ -42,7 +44,7 @@ export function useSpeech(): UseSpeechReturn {
     typeof window !== "undefined" && "speechSynthesis" in window;
 
   /* --------------------------------------------------------------------
-   * ────────────────────── 4.  INITIALISERS / HELPERS  ─────────────────
+   * 4. HELPERS
    * ------------------------------------------------------------------ */
   const initRecognition = useCallback((): SpeechRecognition | null => {
     if (!isRecognitionSupported) return null;
@@ -50,8 +52,8 @@ export function useSpeech(): UseSpeechReturn {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const rec: SpeechRecognition = new Impl();
 
-    rec.continuous = true;          // <-- keeps mic open
-    rec.interimResults = true;      // <-- quicker feedback
+    rec.continuous = true;
+    rec.interimResults = true;
     rec.lang = "en-US";
 
     return rec;
@@ -62,7 +64,6 @@ export function useSpeech(): UseSpeechReturn {
     return window.speechSynthesis;
   }, [isSynthesisSupported]);
 
-  /** 100 % cleanup – used from lots of places */
   const fullyStopRecognition = useCallback(() => {
     const rec = recognitionRef.current;
     if (rec) {
@@ -74,7 +75,7 @@ export function useSpeech(): UseSpeechReturn {
   }, []);
 
   /* --------------------------------------------------------------------
-   * ───────────────────────── 5.  START LISTENING  ─────────────────────
+   * 5. START / STOP LISTENING
    * ------------------------------------------------------------------ */
   const startListening = useCallback(
     (onResult: (transcript: string) => void) => {
@@ -84,8 +85,7 @@ export function useSpeech(): UseSpeechReturn {
       }
 
       if (isListening) {
-        // Button acts as a toggle – clicking again stops listening
-        fullyStopRecognition();
+        fullyStopRecognition();   // toggle off
         return;
       }
 
@@ -98,7 +98,6 @@ export function useSpeech(): UseSpeechReturn {
       recognitionRef.current = rec;
       setRecognitionError(null);
 
-      /* ---- event wire-up ---- */
       rec.onstart = () => {
         setIsListening(true);
         console.log("[Speech] 🎤  Mic activated");
@@ -120,25 +119,13 @@ export function useSpeech(): UseSpeechReturn {
 
       rec.onend = () => {
         console.log("[Speech] 🛑  onend fired");
-        /* Chrome fires onend after a couple of seconds of silence.
-           If the user *hasn't* manually stopped listening, we restart
-           the engine so the mic stays open. */
         if (isListening) {
-          try {
-            rec.start();
-            console.log("[Speech] 🔄  Auto-restart listening session");
-          } catch {
-            /* Occasionally rec.start throws if called too quickly –
-               fallback is to close gracefully. */
-            fullyStopRecognition();
-          }
+          try { rec.start(); } catch { fullyStopRecognition(); }
         }
       };
 
-      /* ---- and… ACTION! ---- */
-      try {
-        rec.start();
-      } catch (err: any) {
+      try { rec.start(); }
+      catch (err: any) {
         console.error("[Speech] Could not start recognition:", err);
         setRecognitionError("Failed to start voice recognition.");
         fullyStopRecognition();
@@ -152,7 +139,7 @@ export function useSpeech(): UseSpeechReturn {
   }, [fullyStopRecognition]);
 
   /* --------------------------------------------------------------------
-   * ──────────────────────── 6.  SPEECH-SYNTHESIS  ─────────────────────
+   * 6. SPEECH SYNTHESIS
    * ------------------------------------------------------------------ */
   useEffect(() => {
     if (!synthesisRef.current && isSynthesisSupported) {
@@ -169,7 +156,7 @@ export function useSpeech(): UseSpeechReturn {
       if (!synthesisRef.current) synthesisRef.current = initSynthesis();
 
       const synth = synthesisRef.current!;
-      if (synth.speaking) synth.cancel(); // interrupt any current speech
+      if (synth.speaking) synth.cancel();
 
       const utt = new SpeechSynthesisUtterance(text);
       utt.rate   = rate;
@@ -198,7 +185,7 @@ export function useSpeech(): UseSpeechReturn {
   }, []);
 
   /* --------------------------------------------------------------------
-   * ───────────────────────── 7.  UNMOUNT CLEAN-UP  ────────────────────
+   * 7. CLEAN-UP ON UNMOUNT
    * ------------------------------------------------------------------ */
   useEffect(() => {
     return () => {
@@ -208,12 +195,13 @@ export function useSpeech(): UseSpeechReturn {
   }, [fullyStopRecognition]);
 
   /* --------------------------------------------------------------------
-   * ─────────────────────────── 8.  EXPORT API  ────────────────────────
+   * 8. EXPORT
    * ------------------------------------------------------------------ */
   return {
     isListening,
     isSpeaking,
     isRecognitionSupported,
+    isSupported: isRecognitionSupported, // <-- legacy alias
     isSynthesisSupported,
     startListening,
     stopListening,
