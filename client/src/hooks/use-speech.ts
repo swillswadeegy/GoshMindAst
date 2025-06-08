@@ -93,9 +93,13 @@ export function useSpeech(): UseSpeechReturn {
 
       rec.onresult = (e: SpeechRecognitionEvent) => {
         const result = e.results[e.results.length - 1];
-        if (!result.isFinal) return;                 // <── NEW GUARD
+        if (!result.isFinal) return;
+
         const transcript = result[0].transcript.trim();
         if (transcript) onResult(transcript);
+
+-       /* (nothing here before) */
++       fullyStopRecognition();          // 🔈← NEW → closes mic immediately
       };
 
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
