@@ -1,4 +1,3 @@
-/* client/src/pages/chat.tsx */
 import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -18,11 +17,10 @@ const SESSION_ID = `session_${Date.now()}_${Math.random()
   .substr(2, 9)}`;
 
 export default function Chat() {
-  /* ---------------- state ---------------- */
+  /* ------------ state ------------ */
   const [inputMessage, setInputMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isVoiceInput, setIsVoiceInput] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);          // ← NEW
 
   /* refs */
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -39,11 +37,38 @@ export default function Chat() {
   const { speak } = useSpeech();
   const { toast } = useToast();
 
-  /* header / footer height calc … (unchanged) */
+  /* header / footer height calc */
+  useEffect(() => {
+    const calc = () => {
+      if (headerRef.current) setContentPaddingTop(headerRef.current.offsetHeight);
+      if (footerRef.current) setContentPaddingBottom(footerRef.current.offsetHeight);
+    };
+    calc();
+    window.addEventListener("resize", calc);
 
-  /* history load … (unchanged) */
+    let ro: ResizeObserver | undefined;
+    if (footerRef.current) {
+      ro = new ResizeObserver(calc);
+      ro.observe(footerRef.current);
+    }
+    return () => {
+      window.removeEventListener("resize", calc);
+      ro?.disconnect();
+    };
+  }, []);
 
-  /* ------------ send message mutation ------------- */
+  /* history load */
+  const { data: conversationData } = useQuery({
+    queryKey: ["/api/conversation", SESSION_ID],
+    queryFn: () => getConversationHistory(SESSION_ID),
+    refetchOnMount: true,
+  });
+
+  useEffect(() => {
+    if (conversationData?.messages) setMessages(conversationData.messages);
+  }, [conversationData]);
+
+  /* send message mutation */
   const sendMessageMutation = useMutation({
     mutationFn: sendChatMessage,
     onSuccess: (response) => {
@@ -61,14 +86,12 @@ export default function Chat() {
         lastInputWasVoiceRef.current = false;
       }
 
-      setIsThinking(false);                     // ← NEW
       queryClient.invalidateQueries({
         queryKey: ["/api/conversation", SESSION_ID],
       });
     },
     onError: (error) => {
       console.error("Send message error:", error);
-      setIsThinking(false);                     // ← NEW
       toast({
         title: "Error",
         description: "Failed to send message. Please try again.",
@@ -77,9 +100,21 @@ export default function Chat() {
     },
   });
 
-  /* textarea auto-resize … (unchanged) */
+  /* textarea auto-resize */
+  const autoResizeTextarea = () => {
+    if (textareaRef.current) {
+      const el = textareaRef.current;
+      el.style.height = "auto";
+      const maxHeight = 128;
+      el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    }
+  };
+  useEffect(() => autoResizeTextarea(), [inputMessage]);
 
   /* ------------- handlers ------------- */
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) =>
+    setInputMessage(e.target.value);
+
   const handleSendMessage = () => {
     const messageContent = inputMessage.trim();
     if (!messageContent || sendMessageMutation.isPending) return;
@@ -94,7 +129,6 @@ export default function Chat() {
     setInputMessage("");
     textareaRef.current && (textareaRef.current.style.height = "auto");
 
-    setIsThinking(true);                        // ← NEW
     sendMessageMutation.mutate({
       message: messageContent,
       sessionId: SESSION_ID,
@@ -102,6 +136,13 @@ export default function Chat() {
 
     lastInputWasVoiceRef.current = false;
     setIsVoiceInput(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
   };
 
   const handleVoiceTranscript = (transcript: string) => {
@@ -118,73 +159,155 @@ export default function Chat() {
     };
     setMessages((prev) => [...prev, userMessage]);
 
-    setIsThinking(true);                        // ← NEW
     sendMessageMutation.mutate({
       message: transcript,
       sessionId: SESSION_ID,
     });
   };
 
-  /* auto-scroll, focus mgmt, etc. … (unchanged) */
+  /* auto-scroll */
+  useEffect(() => {
+    const scrollToBottom = () =>
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 
-  /* ---------------- JSX ---------------- */
+    if (chatContainerRef.current && messagesEndRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+      const distance = scrollHeight - scrollTop - clientHeight;
+      if (messages.length <= 2 || distance < 150) setTimeout(scrollToBottom, 0);
+    }
+  }, [messages]);
+
+  /* focus */
+  useEffect(() => {
+    if (textareaRef.current && !isVoiceInput) textareaRef.current.focus();
+  }, [messages, isVoiceInput]);
+
+  const showWelcome =
+    messages.length === 0 &&
+    !sendMessageMutation.isPending &&
+    !conversationData;
+
+  /* --------------- render --------------- */
   return (
     <div className="flex flex-col min-h-screen max-w-4xl mx-auto bg-gray-50">
-      {/* header … (unchanged) */}
+      {/* header */}
+      <header
+        ref={headerRef}
+        className="bg-white shadow-sm border-b border-gray-200 px-4 py-3 sm:py-4 sticky top-0 z-20"
+      >
+        <div className="flex items-center justify-center">
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight">
+            Policy Bot
+          </h1>
+        </div>
+      </header>
 
       <main
         className="flex-1 flex flex-col overflow-hidden"
         style={{ paddingTop: `${contentPaddingTop}px` }}
       >
-        {/* welcome block unchanged */}
+        {showWelcome ? (
+          /* … welcome block (unchanged) … */
+          <div
+            className="flex-1 flex flex-col items-center justify-center p-4 text-center"
+            style={{ paddingBottom: `${contentPaddingBottom}px` }}
+          >
+            {/* welcome content */}
+          </div>
+        ) : (
+          /* chat history */
+          <div
+            ref={chatContainerRef}
+            className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto"
+            style={{ paddingBottom: `${Math.max(16, contentPaddingBottom)}px` }}
+          >
+            {messages.map((m) => (
+              <ChatMessage
+                key={m.id || m.timestamp}
+                message={m}
+                onSpeak={
+                  m.role === "assistant" ? () => speak(m.content) : undefined
+                }
+              />
+            ))}
 
-        <div
-          ref={chatContainerRef}
-          className="flex-1 px-4 pb-4 space-y-4 overflow-y-auto"
-          style={{ paddingBottom: `${Math.max(16, contentPaddingBottom)}px` }}
-        >
-          {messages.map((m) => (
-            <ChatMessage
-              key={m.id || m.timestamp}
-              message={m}
-              onSpeak={
-                m.role === "assistant" ? () => speak(m.content) : undefined
-              }
-            />
-          ))}
+            <div ref={messagesEndRef} />
 
-          {/* “Thinking…” bubble */}
-          {isThinking && (
-            <div className="flex justify-start">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
-                  <Brain className="w-4 h-4 text-slate-600" />
-                </div>
-                <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
-                      <div
-                        className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                        style={{ animationDelay: "0.1s" }}
-                      ></div>
-                      <div
-                        className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                        style={{ animationDelay: "0.2s" }}
-                      ></div>
+            {/* old “Thinking…” bubble: based on isPending */}
+            {sendMessageMutation.isPending && (
+              <div className="flex justify-start">
+                <div className="flex items-start space-x-3">
+                  <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Brain className="w-4 h-4 text-slate-600" />
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
+                    <div className="flex items-center space-x-2">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"></div>
+                        <div
+                          className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.1s" }}
+                        ></div>
+                        <div
+                          className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                          style={{ animationDelay: "0.2s" }}
+                        ></div>
+                      </div>
+                      <span className="text-xs text-slate-500">Thinking...</span>
                     </div>
-                    <span className="text-xs text-slate-500">Thinking...</span>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* footer … (unchanged) */}
+      {/* footer */}
+      <footer
+        ref={footerRef}
+        className="bg-white border-t border-gray-200 p-3 sm:p-4 sticky bottom-0 z-20"
+      >
+        <div className="flex items-end space-x-2 sm:space-x-3">
+          <VoiceInput
+            onTranscript={handleVoiceTranscript}
+            disabled={sendMessageMutation.isPending}
+          />
+          <div className="flex-1 relative">
+            <Textarea
+              ref={textareaRef}
+              value={inputMessage}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message..."
+              className="resize-none rounded-2xl border-gray-300 px-4 py-3 pr-12 focus:border-primary focus:ring-primary/50 text-sm max-h-32 min-h-[48px] w-full"
+              rows={1}
+              disabled={sendMessageMutation.isPending}
+            />
+            <Button
+              onClick={handleSendMessage}
+              disabled={
+                !inputMessage.trim() || sendMessageMutation.isPending
+              }
+              className="absolute right-2 bottom-2 w-8 h-8 p-0 rounded-full"
+              size="sm"
+              aria-label="Send message"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+          <span>Press Enter to send • Press microphone to speak</span>
+          {inputMessage.length > 100 && (
+            <span>
+              {inputMessage.length}
+              /2000
+            </span>
+          )}
+        </div>
+      </footer>
     </div>
   );
 }
