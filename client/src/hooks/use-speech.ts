@@ -1,5 +1,5 @@
 /* client/src/hooks/use-speech.ts
- * Only send transcript after the browser marks it FINAL
+ * Works the same everywhere (Windows, macOS, iOS, Android)
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -19,19 +19,19 @@ export interface UseSpeechReturn {
 }
 
 export function useSpeech(): UseSpeechReturn {
-  /* ───────────────────────────── STATE ───────────────────────────── */
+  /* ──────────────── state ──────────────── */
   const [isListening, setIsListening] = useState(false);
   const [recognitionError, setRecognitionError] = useState<string | null>(null);
 
-  const [isSpeaking, setIsSpeaking]   = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [synthesisError, setSynthesisError] = useState<string | null>(null);
 
-  /* ───────────────────────────── REFS ────────────────────────────── */
+  /* ──────────────── refs ──────────────── */
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthesisRef   = useRef<SpeechSynthesis | null>(null);
-  const currentUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const currentUttRef  = useRef<SpeechSynthesisUtterance | null>(null);
 
-  /* ───────────────────── FEATURE DETECTION ───────────────────────── */
+  /* ───────── feature detection ───────── */
   const isRecognitionSupported =
     typeof window !== "undefined" &&
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
@@ -39,15 +39,15 @@ export function useSpeech(): UseSpeechReturn {
   const isSynthesisSupported =
     typeof window !== "undefined" && "speechSynthesis" in window;
 
-  /* ─────────────────────── HELPERS / INIT ───────────────────────── */
+  /* ─────────── helpers / init ─────────── */
   const initRecognition = useCallback((): SpeechRecognition | null => {
     if (!isRecognitionSupported) return null;
     const Impl =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const rec: SpeechRecognition = new Impl();
 
-    rec.continuous = true;     // keep mic open for new utterances
-    rec.interimResults = false; // **key change** → only final results delivered
+    rec.continuous = false;      // ← critical for Windows
+    rec.interimResults = false;  // deliver only final result
     rec.lang = "en-US";
     return rec;
   }, [isRecognitionSupported]);
@@ -61,13 +61,13 @@ export function useSpeech(): UseSpeechReturn {
     const rec = recognitionRef.current;
     if (rec) {
       rec.onstart = rec.onend = rec.onresult = rec.onerror = null;
-      try { rec.stop(); } catch {}
+      try { rec.stop(); } catch { /* ignore */ }
     }
     recognitionRef.current = null;
     setIsListening(false);
   }, []);
 
-  /* ───────────────────── LISTEN / STOP HOOK API ──────────────────── */
+  /* ─────────── listen / stop api ─────────── */
   const startListening = useCallback(
     (onResult: (transcript: string) => void) => {
       if (!isRecognitionSupported) {
@@ -75,7 +75,8 @@ export function useSpeech(): UseSpeechReturn {
         return;
       }
 
-      if (isListening) {          // toggle ↔ stop
+      /* toggle off if already listening */
+      if (isListening) {
         fullyStopRecognition();
         return;
       }
@@ -89,46 +90,47 @@ export function useSpeech(): UseSpeechReturn {
       recognitionRef.current = rec;
       setRecognitionError(null);
 
-      rec.onstart = () => { setIsListening(true); };
+      rec.onstart = () => setIsListening(true);
 
       rec.onresult = (e: SpeechRecognitionEvent) => {
-        const result = e.results[e.results.length - 1];
-        if (!result.isFinal) return;
+        const res = e.results[e.results.length - 1];
+        if (!res.isFinal) return;
 
-        const transcript = result[0].transcript.trim();
+        const transcript = res[0].transcript.trim();
         if (transcript) onResult(transcript);
-
--       /* (nothing here before) */
-+       fullyStopRecognition();          // 🔈← NEW → closes mic immediately
       };
 
       rec.onerror = (e: SpeechRecognitionErrorEvent) => {
-        if (e.error !== "aborted" && e.error !== "no-speech") {
+        console.warn("[Speech] error:", e.error);
+        /* benign errors on Windows we simply swallow */
+        if (e.error !== "no-speech" && e.error !== "aborted") {
           setRecognitionError(`Voice recognition error: ${e.error}`);
         }
-        fullyStopRecognition();
       };
 
       rec.onend = () => {
-        // Chrome fires onend after a few seconds of silence.
-        // If user hasn’t manually stopped, auto-restart so button keeps glowing.
-        if (isListening) {
-          try { rec.start(); } catch { fullyStopRecognition(); }
-        }
+        /* always tidy up UI */
+        fullyStopRecognition();
+        /* If you want to auto-restart after “no-speech” you can
+           uncomment the lines below. By default we require the user
+           to click again, which avoids the Windows bug loop. */
+        // if (!recognitionError) {
+        //   startListening(onResult);
+        // }
       };
 
       try { rec.start(); }
       catch (err: any) {
-        setRecognitionError("Failed to start voice recognition.");
+        setRecognitionError(`Failed to start voice recognition: ${err.message}`);
         fullyStopRecognition();
       }
     },
     [isRecognitionSupported, isListening, initRecognition, fullyStopRecognition]
   );
 
-  const stopListening = useCallback(() => { fullyStopRecognition(); }, [fullyStopRecognition]);
+  const stopListening = useCallback(() => fullyStopRecognition(), [fullyStopRecognition]);
 
-  /* ─────────────────────── SPEECH-SYNTHESIS ─────────────────────── */
+  /* ─────────── speech-synthesis ─────────── */
   useEffect(() => {
     if (!synthesisRef.current && isSynthesisSupported) {
       synthesisRef.current = initSynthesis();
@@ -158,7 +160,7 @@ export function useSpeech(): UseSpeechReturn {
         setIsSpeaking(false);
       };
 
-      currentUtteranceRef.current = utt;
+      currentUttRef.current = utt;
       synth.speak(utt);
     },
     [initSynthesis, isSynthesisSupported]
@@ -171,7 +173,7 @@ export function useSpeech(): UseSpeechReturn {
     setIsSpeaking(false);
   }, []);
 
-  /* ───────────────────────── CLEAN-UP ────────────────────────────── */
+  /* ─────────── cleanup on unmount ─────────── */
   useEffect(() => {
     return () => {
       fullyStopRecognition();
@@ -179,12 +181,12 @@ export function useSpeech(): UseSpeechReturn {
     };
   }, [fullyStopRecognition]);
 
-  /* ─────────────────────────── EXPORT ────────────────────────────── */
+  /* ─────────── export api ─────────── */
   return {
     isListening,
     isSpeaking,
     isRecognitionSupported,
-    isSupported: isRecognitionSupported,   // legacy alias
+    isSupported: isRecognitionSupported, // legacy alias
     isSynthesisSupported,
     startListening,
     stopListening,
