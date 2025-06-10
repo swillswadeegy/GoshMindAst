@@ -1,5 +1,4 @@
 /* client/src/components/chat-message.tsx */
-
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,23 +11,29 @@ interface ChatMessageProps {
   onSpeak?: (text: string) => void;
 }
 
+/* helper: safe time string or empty */
+const formatTime = (iso?: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? ""
+    : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
+
 export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
-  const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const timeString = formatTime(message.timestamp);
 
   /* ---------- USER BUBBLE ---------- */
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="max-w-xs lg:max-w-md bg-primary text-white rounded-2xl rounded-br-md px-4 py-3">
-          {/* ReactMarkdown also handles plain text perfectly */}
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {message.content}
           </ReactMarkdown>
-
-          <span className="text-xs opacity-75 mt-1 block">{timestamp}</span>
+          {timeString && (
+            <span className="text-xs opacity-75 mt-1 block">{timeString}</span>
+          )}
         </div>
       </div>
     );
@@ -38,17 +43,14 @@ export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
   return (
     <div className="flex justify-start">
       <div className="flex items-start space-x-3">
-        {/* avatar */}
         <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
           <Bot className="w-4 h-4 text-slate-600" />
         </div>
 
-        {/* bubble */}
         <div className="max-w-xs lg:max-w-md bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              // make links blue & underlined like typical chat
               a: ({ node, ...props }) => (
                 <a
                   {...props}
@@ -62,7 +64,9 @@ export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
           </ReactMarkdown>
 
           <div className="flex items-center justify-between mt-2">
-            <span className="text-xs text-slate-500">{timestamp}</span>
+            {timeString && (
+              <span className="text-xs text-slate-500">{timeString}</span>
+            )}
             {onSpeak && (
               <Button
                 variant="ghost"
