@@ -1,3 +1,8 @@
+/* client/src/components/chat-message.tsx */
+
+import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { Volume2, Bot } from "lucide-react";
 import type { Message } from "@shared/schema";
@@ -9,29 +14,53 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
   const timestamp = new Date(message.timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
+  /* ---------- USER BUBBLE ---------- */
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="max-w-xs lg:max-w-md bg-primary text-white rounded-2xl rounded-br-md px-4 py-3">
-          <p className="text-sm leading-relaxed">{message.content}</p>
+          {/* ReactMarkdown also handles plain text perfectly */}
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+
           <span className="text-xs opacity-75 mt-1 block">{timestamp}</span>
         </div>
       </div>
     );
   }
 
+  /* ---------- ASSISTANT BUBBLE ---------- */
   return (
     <div className="flex justify-start">
       <div className="flex items-start space-x-3">
+        {/* avatar */}
         <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
           <Bot className="w-4 h-4 text-slate-600" />
         </div>
+
+        {/* bubble */}
         <div className="max-w-xs lg:max-w-md bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
-          <p className="text-sm text-slate-800 leading-relaxed">{message.content}</p>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // make links blue & underlined like typical chat
+              a: ({ node, ...props }) => (
+                <a
+                  {...props}
+                  className="text-blue-600 underline underline-offset-2"
+                />
+              ),
+            }}
+            className="text-sm text-slate-800 leading-relaxed prose prose-sm break-words"
+          >
+            {message.content}
+          </ReactMarkdown>
+
           <div className="flex items-center justify-between mt-2">
             <span className="text-xs text-slate-500">{timestamp}</span>
             {onSpeak && (
