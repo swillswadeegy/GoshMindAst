@@ -20,9 +20,17 @@ export interface ChatResponse {
 export async function sendChatMessage(
   request: ChatRequest
 ): Promise<ChatResponse> {
-  const res = await apiRequest("POST", "/api/chat", request);
+  const payload = {
+    sessionId: request.sessionId,
+    message:
+      request.messages[request.messages.length - 1]?.content ?? "", // latest user text
+    messages: request.messages,                                     // full history
+  };
+
+  const res = await apiRequest("POST", "/api/chat", payload);
   return res.json();
 }
+
 
 /* GET history (if you still use it) */
 export async function getConversationHistory(sessionId: string) {
