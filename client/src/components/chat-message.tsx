@@ -11,7 +11,6 @@ interface ChatMessageProps {
   onSpeak?: (text: string) => void;
 }
 
-/* helper: safe time string or empty */
 const formatTime = (iso?: string) => {
   if (!iso) return "";
   const d = new Date(iso);
@@ -23,14 +22,12 @@ const formatTime = (iso?: string) => {
 export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
   const timeString = formatTime(message.timestamp);
 
-  /* ---------- USER BUBBLE ---------- */
+  /* USER bubble */
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
         <div className="max-w-xs lg:max-w-md bg-primary text-white rounded-2xl rounded-br-md px-4 py-3">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           {timeString && (
             <span className="text-xs opacity-75 mt-1 block">{timeString}</span>
           )}
@@ -39,21 +36,20 @@ export function ChatMessage({ message, onSpeak }: ChatMessageProps) {
     );
   }
 
-  /* ---------- ASSISTANT BUBBLE ---------- */
+  /* ASSISTANT bubble */
   return (
     <div className="flex justify-start">
       <div className="flex items-start space-x-3">
-        <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center shrink-0">
           <Bot className="w-4 h-4 text-slate-600" />
         </div>
-
         <div className="max-w-xs lg:max-w-md bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              a: ({ node, ...props }) => (
+              a: (p) => (
                 <a
-                  {...props}
+                  {...p}
                   className="text-blue-600 underline underline-offset-2"
                 />
               ),
