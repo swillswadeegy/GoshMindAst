@@ -25,7 +25,7 @@ const chatRequestSchema = z.object({
       z.object({
         role: z.enum(["user", "assistant"]),
         content: z.string(),
-        timestamp: z.string().optional(), // may be missing from client
+        timestamp: z.string().optional(),
       })
     )
     .optional(),
@@ -64,13 +64,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
               },
             ];
 
-      /* ensure each has a timestamp */
+      /* add timestamp if missing */
       promptMessages = promptMessages.map((m) => ({
         ...m,
         timestamp: m.timestamp ?? new Date().toISOString(),
       }));
 
-      const updatedMessages = [...conversation.messages, ...promptMessages];
+      /* ---------- persist ONLY the newest user message ---------- */
+      let updatedMessages = conversation.messages;
+      const newest = promptMessages[promptMessages.length - 1];
+      if (newest.role === "user") {
+        updatedMessages = [...conversation.messages, newest];
+      }
 
       /* ---------- OpenAI assistant call ---------- */
       const thread = await openai.beta.threads.create();
@@ -110,9 +115,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.json(response);
     } catch (err) {
       console.error("Chat error:", err);
-      if (err instanceof z.ZodError)
-        return res.status(400).json({ message: "Invalid request", errors: err.errors });
-      return res.status(500).json({ message: "Server error: " + (err as Error).message });
+      if (err instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ message: "Invalid request", errors: err.errors });
+      }
+      return res
+        .status(500)
+        .json({ message: "Server error: " + (err as Error).message });
     }
   });
 
