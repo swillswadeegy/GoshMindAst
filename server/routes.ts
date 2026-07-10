@@ -1,5 +1,5 @@
 /**********************************************************************
- * routes.ts – Express + OpenAI Responses API (file_search, remembers context)
+ * routes.ts – Express + OpenAI Responses API (file_search via vector store)
  *********************************************************************/
 import type { Express } from "express";
 import { createServer, type Server } from "http";
@@ -35,7 +35,7 @@ document and, where available, the section or page number (e.g. [Policy Name, Se
 6. PROFESSIONAL TONE: maintain a clear, concise, and professional tone appropriate for clinical and \
 administrative staff.`;
 
-/* ------------ Vector store / file ID ------------ */
+/* ------------ Vector store ID ------------ */
 const VECTOR_STORE_ID =
   process.env.OPENAI_FILE_ID || "vs_6837a69465748191a9a3deef54538a25";
 
@@ -95,28 +95,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedMessages = [...conversation.messages, newest];
       }
 
-      /* ---------- OpenAI Responses API call (chat.completions + file_search) ---------- */
-      const completion = await openai.chat.completions.create({
+      /* ---------- OpenAI Responses API call (file_search via vector store) ---------- */
+      const openaiResponse = await openai.responses.create({
         model: "gpt-4o",
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          ...promptMessages.map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          })),
-        ],
+        instructions: SYSTEM_PROMPT,
+        input: promptMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
         tools: [
           {
             type: "file_search" as const,
-            file_search: {
-              vector_store_ids: [VECTOR_STORE_ID],
-            },
+            vector_store_ids: [VECTOR_STORE_ID],
           },
         ],
-        tool_choice: "auto",
       });
 
-      const assistantText = completion.choices[0]?.message?.content;
+      const assistantText = openaiResponse.output_text;
       if (!assistantText) {
         throw new Error("No assistant text found in response");
       }
