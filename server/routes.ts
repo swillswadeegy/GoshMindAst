@@ -1,5 +1,5 @@
 /**********************************************************************
- * routes.ts – Express + OpenAI Assistant (remembers context)
+ * routes.ts – Express + OpenAI Responses API (file_search, remembers context)
  *********************************************************************/
 import type { Express } from "express";
 import { createServer, type Server } from "http";
@@ -15,6 +15,29 @@ const openai = new OpenAI({
     process.env.OPENAI_API_KEY_ENV_VAR ||
     "default_key",
 });
+
+/* ------------ GOSH policy system prompt ------------ */
+const SYSTEM_PROMPT =
+  process.env.OPENAI_SYSTEM_PROMPT ||
+  `You are a knowledgeable and helpful assistant for Great Ormond Street Hospital (GOSH) staff. \
+Your role is to help staff find and understand GOSH policies, guidelines, and procedures.
+
+STRICT GROUNDING RULES — you must follow these without exception:
+1. SYNTHESISE only: base every answer exclusively on the documents retrieved by the file_search tool. \
+Do not add information from your general training knowledge.
+2. NO SPECULATION: if the retrieved documents do not contain enough information to answer the question \
+fully, say so explicitly rather than guessing or inferring.
+3. NOT FOUND rule: if the answer cannot be found in the retrieved documents, respond with \
+"Not Found in current GOSH policy documents" and suggest the staff member contacts the relevant department.
+4. MANDATORY CITATIONS: every factual claim must be followed by a citation identifying the source \
+document and, where available, the section or page number (e.g. [Policy Name, Section 3.2]).
+5. UK ENGLISH: use British spelling and terminology throughout (e.g. "organisation", "colour", "theatre").
+6. PROFESSIONAL TONE: maintain a clear, concise, and professional tone appropriate for clinical and \
+administrative staff.`;
+
+/* ------------ Vector store / file ID ------------ */
+const VECTOR_STORE_ID =
+  process.env.OPENAI_FILE_ID || "vs_6837a69465748191a9a3deef54538a25";
 
 /* ------------ Request schema ------------ */
 const chatRequestSchema = z.object({
@@ -39,11 +62,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { sessionId, message, messages } = chatRequestSchema.parse(req.body);
       if (!message && (!messages || !messages.length)) {
         return res.status(400).json({ message: "Need 'message' or 'messages'." });
-      }
-
-      const assistantId = process.env.OPENAI_ASSISTANT_ID;
-      if (!assistantId) {
-        return res.status(500).json({ message: "Assistant ID not set." });
       }
 
       /* ---------- fetch / create conversation ---------- */
@@ -77,31 +95,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         updatedMessages = [...conversation.messages, newest];
       }
 
-      /* ---------- OpenAI assistant call ---------- */
-      const thread = await openai.beta.threads.create();
-      for (const m of promptMessages) {
-        await openai.beta.threads.messages.create(thread.id, {
-          role: m.role,
-          content: m.content,
-        });
+      /* ---------- OpenAI Responses API call (chat.completions + file_search) ---------- */
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          ...promptMessages.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+        ],
+        tools: [
+          {
+            type: "file_search" as const,
+            file_search: {
+              vector_store_ids: [VECTOR_STORE_ID],
+            },
+          },
+        ],
+        tool_choice: "auto",
+      });
+
+      const assistantText = completion.choices[0]?.message?.content;
+      if (!assistantText) {
+        throw new Error("No assistant text found in response");
       }
 
-      const run = await openai.beta.threads.runs.createAndPoll(thread.id, {
-        assistant_id: assistantId,
-      });
-      if (run.status !== "completed")
-        throw new Error(`Assistant run failed: ${run.status}`);
-
-      const threadMsgs = await openai.beta.threads.messages.list(thread.id);
-      const assistantMsg = threadMsgs.data.find((m) => m.role === "assistant");
-      if (
-        !assistantMsg ||
-        !assistantMsg.content[0] ||
-        assistantMsg.content[0].type !== "text"
-      )
-        throw new Error("No assistant text found");
-
-      const assistantText = assistantMsg.content[0].text.value;
       const assistantMessage: Message = {
         role: "assistant",
         content: assistantText,
